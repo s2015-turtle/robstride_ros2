@@ -41,7 +41,8 @@ Frame make_motion_command(
   double kp, double kd)
 {
   Frame frame;
-  const uint16_t effort_raw = encode_u16(effort, limits.effort_min, limits.effort_max);
+  const double safe_effort = std::clamp(effort, limits.effort_min, limits.effort_max);
+  const uint16_t effort_raw = encode_u16(safe_effort, limits.effort_wire_min, limits.effort_wire_max);
   frame.id = base_id(kTypeMotionControl, effort_raw, motor_id);
   put_be16(frame.data, 0, encode_u16(position, limits.position_min, limits.position_max));
   put_be16(frame.data, 2, encode_u16(velocity, limits.velocity_min, limits.velocity_max));
@@ -83,6 +84,15 @@ Frame make_write_u8(uint8_t motor_id, uint8_t host_id, uint16_t index, uint8_t v
   return frame;
 }
 
+Frame make_write_u32(uint8_t motor_id, uint8_t host_id, uint16_t index, uint32_t value)
+{
+  Frame frame = make_write_u8(motor_id, host_id, index, 0);
+  for (size_t i = 0; i < 4; ++i) {
+    frame.data[4 + i] = static_cast<uint8_t>((value >> (8 * i)) & 0xff);
+  }
+  return frame;
+}
+
 Frame make_write_float(uint8_t motor_id, uint8_t host_id, uint16_t index, float value)
 {
   Frame frame = make_write_u8(motor_id, host_id, index, 0);
@@ -113,7 +123,7 @@ std::optional<Feedback> decode_feedback(
   feedback.fault_flags = static_cast<uint8_t>((area >> 8) & 0x3f);
   feedback.position = decode_u16(get_be16(0), limits.position_min, limits.position_max);
   feedback.velocity = decode_u16(get_be16(2), limits.velocity_min, limits.velocity_max);
-  feedback.effort = decode_u16(get_be16(4), limits.effort_min, limits.effort_max);
+  feedback.effort = decode_u16(get_be16(4), limits.effort_wire_min, limits.effort_wire_max);
   feedback.temperature = static_cast<double>(get_be16(6)) * 0.1;
   return feedback;
 }

@@ -15,6 +15,8 @@ struct Limits
   double velocity_max;
   double effort_min;
   double effort_max;
+  double effort_wire_min;
+  double effort_wire_max;
   double kp_max;
   double kd_max;
 };
@@ -43,6 +45,7 @@ constexpr uint8_t kTypeStop = 4;
 constexpr uint8_t kTypeSetZero = 6;
 constexpr uint8_t kTypeWriteParameter = 18;
 constexpr uint16_t kIndexRunMode = 0x7005;
+constexpr uint16_t kIndexCanTimeout = 0x7028;
 
 uint16_t encode_u16(double value, double minimum, double maximum);
 double decode_u16(uint16_t value, double minimum, double maximum);
@@ -53,6 +56,7 @@ Frame make_enable(uint8_t motor_id, uint8_t host_id);
 Frame make_stop(uint8_t motor_id, uint8_t host_id, bool clear_fault = false);
 Frame make_set_zero(uint8_t motor_id, uint8_t host_id);
 Frame make_write_u8(uint8_t motor_id, uint8_t host_id, uint16_t index, uint8_t value);
+Frame make_write_u32(uint8_t motor_id, uint8_t host_id, uint16_t index, uint32_t value);
 Frame make_write_float(uint8_t motor_id, uint8_t host_id, uint16_t index, float value);
 std::optional<Feedback> decode_feedback(
   uint32_t id, const std::array<uint8_t, 8> & data, uint8_t dlc, bool is_extended,

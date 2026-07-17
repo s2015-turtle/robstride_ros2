@@ -18,13 +18,18 @@
       <param name="can_tx_topic">$(arg can_tx_topic)</param>
       <param name="can_rx_topic">$(arg can_rx_topic)</param>
       <param name="can_qos_depth">500</param>
-      <param name="feedback_timeout_ms">500</param>
+      <param name="feedback_timeout_ms">3000</param>
       <param name="fail_on_feedback_timeout">true</param>
       <param name="clear_faults_on_activate">true</param>
       <param name="set_zero_on_activate">false</param>
+      <param name="shutdown_stop_repetitions">3</param>
+      <param name="shutdown_stop_interval_ms">20</param>
+      <param name="shutdown_confirmation_timeout_ms">300</param>
     </hardware>
     <joint name="robstride_joint">
       <param name="can_id">1</param>
+      <!-- Nonzero motor-side CAN watchdog. 4000 ticks = 200 ms on EduLite05. -->
+      <param name="can_timeout_ticks">4000</param>
       <!-- RS05 example. Confirm these values against the exact motor/firmware manual. -->
       <param name="position_min">-12.566370614359172</param>
       <param name="position_max">12.566370614359172</param>
@@ -37,6 +42,7 @@
       <param name="kp">30.0</param>
       <param name="kd">1.0</param>
       <param name="direction">1</param>
+      <param name="gear_ratio">1.0</param>
       <param name="position_offset">0.0</param>
       <command_interface name="position"/>
       <command_interface name="velocity"/>

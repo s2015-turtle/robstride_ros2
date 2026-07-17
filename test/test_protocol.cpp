@@ -8,7 +8,7 @@
 namespace rs = robstride_ros2;
 
 constexpr double kPi = 3.14159265358979323846;
-constexpr rs::Limits kRs02{-4.0 * kPi, 4.0 * kPi, -44.0, 44.0, -17.0, 17.0, 500.0, 5.0};
+constexpr rs::Limits kRs02{-4.0 * kPi, 4.0 * kPi, -44.0, 44.0, -17.0, 17.0, -17.0, 17.0, 500.0, 5.0};
 
 TEST(Protocol, EncodeEndpointsAndCenter)
 {
@@ -42,6 +42,14 @@ TEST(Protocol, LifecycleAndParameterFrames)
   EXPECT_EQ(mode.id, 0x1200fd03u);
   EXPECT_EQ(mode.data[0], 0x05);
   EXPECT_EQ(mode.data[1], 0x70);
+  const auto watchdog = rs::make_write_u32(1, 0xfd, rs::kIndexCanTimeout, 20000);
+  EXPECT_EQ(watchdog.id, 0x1200fd01u);
+  EXPECT_EQ(watchdog.data[0], 0x28);
+  EXPECT_EQ(watchdog.data[1], 0x70);
+  EXPECT_EQ(watchdog.data[4], 0x20);
+  EXPECT_EQ(watchdog.data[5], 0x4e);
+  EXPECT_EQ(watchdog.data[6], 0x00);
+  EXPECT_EQ(watchdog.data[7], 0x00);
 }
 
 TEST(Protocol, DecodesFeedbackAndRejectsWrongHost)

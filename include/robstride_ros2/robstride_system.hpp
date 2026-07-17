@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -59,9 +60,11 @@ private:
     uint8_t can_id{0};
     Limits limits{};
     double direction{1.0};
+    double gear_ratio{1.0};
     double position_offset{0.0};
     double kp{0.0};
     double kd{0.0};
+    uint32_t can_timeout_ticks{0};
     double state_position{0.0};
     double state_velocity{0.0};
     double state_effort{0.0};
@@ -74,6 +77,7 @@ private:
     bool velocity_active{false};
     bool effort_active{false};
     bool feedback_received{false};
+    uint8_t feedback_mode{0};
     std::chrono::steady_clock::time_point last_feedback{};
   };
 
@@ -87,14 +91,18 @@ private:
   std::vector<Joint> joints_;
   std::unordered_map<uint8_t, size_t> can_id_to_joint_;
   std::mutex mutex_;
+  std::condition_variable feedback_condition_;
   uint8_t host_id_{0xfd};
   std::string tx_topic_{"to_can_bus"};
   std::string rx_topic_{"from_can_bus"};
   size_t qos_depth_{500};
-  int feedback_timeout_ms_{500};
+  int feedback_timeout_ms_{3000};
   bool fail_on_feedback_timeout_{true};
   bool clear_faults_on_activate_{true};
   bool set_zero_on_activate_{false};
+  int shutdown_stop_repetitions_{3};
+  int shutdown_stop_interval_ms_{20};
+  int shutdown_confirmation_timeout_ms_{300};
   bool active_{false};
   std::chrono::steady_clock::time_point activated_at_{};
 

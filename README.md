@@ -1,126 +1,221 @@
 # robstride_ros2
 
-RobStrideのprivate CAN protocolを`ros2_control`のSystem Hardware Componentとして扱うROS 2 Humbleパッケージです。CANデバイスは直接開かず、`ros2_socketcan`のClassic CAN topicを利用します。
+RobStride Private Protocol用のROS 2 Humble `ros2_control` Hardware Componentです。CAN通信には`ros2_socketcan`の`can_msgs/msg/Frame`トピックを使用します。
 
-```
-controller -> ros2_control -> RobStrideSystem -> to_can_bus -> ros2_socketcan -> can0
-controller <- ros2_control <- RobStrideSystem <- from_can_bus <- ros2_socketcan <- can0
-```
+## 対応範囲
 
-## 対応内容
+- Type 1、`run_mode=0`によるposition / velocity / effort制御
+- Type 2によるposition / velocity / effort / temperature / fault取得
+- 1つのHardware Componentで複数モーターを制御
+- モーターごとにCAN ID、型番、方向、減速比、Kp/Kdを設定
+- モーターごとに異なるcontrollerを同時使用
+- CAN watchdogと終了時Type 4停止処理
 
-- 1つのSystem pluginで複数モーターを制御
-- RobStride Type 1（MIT/運控モード）によるposition・velocity・effort指令
-- Type 2 feedbackからposition・velocity・effort・temperature・faultを復号
-- lifecycle activate時にfault clear、run mode 0、enableを送信
-- deactivate時にゼロトルク指令とType 4 stopを送信
-- feedback watchdog、NaN防止、指令clamp、CAN ID重複検査
-- `direction`と`position_offset`によるjoint座標変換
+CANopen、11bit MIT Protocol、`run_mode=1/2/3/5`のパラメータ指令方式には対応していません。
 
-## 重要な前提
-
-モーターはRobStride private protocol、CAN 2.0、29-bit拡張frame、通常1 Mbpsに設定してください。`ros2_socketcan`はLinux SocketCAN用なので、このmacOSワークスペースではprotocol/testの検証のみ可能で、実CAN試験はLinuxで行います。
-
-RobStrideは機種ごとにwire scalingが異なります。安全上、各jointに以下を明示します。
-
-- `position_min`, `position_max` [rad]
-- `velocity_min`, `velocity_max` [rad/s]
-- `effort_min`, `effort_max` [Nm]
-- `kp_max`, `kd_max`, および実際に使う`kp`, `kd`
-
-同梱xacroはRS05向けの例です。RS02なら公式manualの代表値はposition ±4π、velocity ±44 rad/s、effort ±17 Nm、Kp 0..500、Kd 0..5です。実機の型番とfirmwareのmanualを必ず優先してください。
-
-## hardware parameters
-
-| parameter | default | 内容 |
-|---|---:|---|
-| `host_can_id` | `253` | host側CAN ID |
-| `can_tx_topic` | `to_can_bus` | ros2_socketcan送信topic |
-| `can_rx_topic` | `from_can_bus` | ros2_socketcan受信topic |
-| `can_qos_depth` | `500` | ros2_socketcan Humbleと一致するReliable/Volatile depth |
-| `feedback_timeout_ms` | `500` | feedback watchdog |
-| `fail_on_feedback_timeout` | `true` | timeout時にreadをERRORにする |
-| `clear_faults_on_activate` | `true` | activate時にType 4 `data[0]=1`を送る |
-| `set_zero_on_activate` | `false` | activate時に現在位置を機械ゼロにする（危険なので既定off） |
-
-各jointは`can_id`、上記scaling/gain、任意の`direction`（`1`または`-1`）と`position_offset`を持ちます。command interfaceはposition/velocity/effortを3つとも宣言してください。controllerがclaimしたinterfaceだけが有効になり、未claimの速度・effortは0、positionは現在feedbackを使います。
-
-## buildと起動
+## インストール
 
 ```bash
-pixi run colcon build --packages-select can_msgs robstride_ros2 --symlink-install
+rosdep update
+rosdep install --from-paths src --ignore-src -r -y
+colcon build --packages-select robstride_ros2 --symlink-install
 source install/setup.bash
+```
+
+## 起動
+
+同梱例はCAN ID 1の1軸position制御です。
+
+```bash
 ros2 launch robstride_ros2 robstride_example.launch.py interface:=can0
 ```
 
-`ros2_socketcan` 1.2系で独自topic名を使う場合はbridge側をROS remapし、xacro側の`can_tx_topic`/`can_rx_topic`も同じ名前にします。1.3系ではbridge launchの`to_can_bus_topic`/`from_can_bus_topic`引数も利用できます。
-
-position controllerの例:
+確認：
 
 ```bash
-# position controllerはlaunch時に起動済み。単位はrad。
-ros2 topic pub --rate 20 /robstride_position_controller/commands std_msgs/msg/Float64MultiArray \
-  "{data: [0.5]}"
-# 終了はCtrl-C。position指令は最後の値を保持する。
-```
-
-## 起動後の速度・トルク制御
-
-`robstride_example.launch.py`はposition controllerを起動します。速度またはトルクへ切り替える場合は、対象controllerをspawnしてから切り替えます。同じjointのcommand interfaceを複数controllerで同時claimしないでください。
-
-```bash
-# 起動確認
+ros2 control list_controllers
 ros2 control list_hardware_interfaces
 ros2 topic echo /joint_states
+```
 
-# 速度制御 [rad/s]
+位置指令：
+
+```bash
+ros2 topic pub --rate 20 \
+  /robstride_position_controller/commands \
+  std_msgs/msg/Float64MultiArray "{data: [0.2]}"
+```
+
+## Hardware parameters
+
+`<ros2_control><hardware>`内に記述します。
+
+| parameter | default | 仕様 |
+|---|---:|---|
+| `host_can_id` | `253` | host CAN ID。`0..255` |
+| `can_tx_topic` | `to_can_bus` | `ros2_socketcan`への送信topic |
+| `can_rx_topic` | `from_can_bus` | `ros2_socketcan`からの受信topic |
+| `can_qos_depth` | `500` | Reliable / Volatile QoSのdepth。`1`以上 |
+| `feedback_timeout_ms` | `3000` | Type 2が途絶えてからHardwareをERRORにするまでの時間 |
+| `fail_on_feedback_timeout` | `true` | feedback timeout時にHardwareをERRORへ遷移 |
+| `clear_faults_on_activate` | `true` | activate時にfault clearを送信 |
+| `set_zero_on_activate` | `false` | activate時に現在位置を機械ゼロへ設定 |
+| `shutdown_stop_repetitions` | `3` | 終了時のゼロ指令＋Type 4送信回数 |
+| `shutdown_stop_interval_ms` | `20` | Type 4再送間隔 |
+| `shutdown_confirmation_timeout_ms` | `300` | Type 2 Reset応答の待機時間。`0`で確認無効 |
+
+設定例：
+
+```xml
+<hardware>
+  <plugin>robstride_ros2/RobStrideSystem</plugin>
+  <param name="host_can_id">253</param>
+  <param name="can_tx_topic">to_can_bus</param>
+  <param name="can_rx_topic">from_can_bus</param>
+  <param name="feedback_timeout_ms">3000</param>
+  <param name="fail_on_feedback_timeout">true</param>
+  <param name="clear_faults_on_activate">true</param>
+  <param name="set_zero_on_activate">false</param>
+  <param name="shutdown_stop_repetitions">3</param>
+  <param name="shutdown_stop_interval_ms">20</param>
+  <param name="shutdown_confirmation_timeout_ms">300</param>
+</hardware>
+```
+
+## Joint parameters
+
+各`<joint>`に設定します。
+
+| parameter | default | 仕様 |
+|---|---:|---|
+| `can_id` | 必須 | motor CAN ID。`1..255`、重複不可 |
+| `can_timeout_ticks` | 必須 | motor側CAN watchdog。非ゼロ必須 |
+| `position_min/max` | 必須 | Type 1/2のmotor-axis position wire範囲 `[rad]` |
+| `velocity_min/max` | 必須 | Type 1/2のmotor-axis velocity wire範囲 `[rad/s]` |
+| `effort_min/max` | 必須 | effort指令のclamp範囲 `[Nm]` |
+| `effort_wire_min/max` | `effort_min/max` | Type 1/2のeffort wire範囲 `[Nm]` |
+| `kp_max` / `kd_max` | 必須 | Type 1のgain wire上限 |
+| `kp` / `kd` | 必須 | position/velocity制御に使用するgain |
+| `direction` | `1` | `1`または`-1` |
+| `gear_ratio` | `1.0` | motor回転数 / joint回転数。正数 |
+| `position_offset` | `0.0` | ROS joint位置オフセット `[rad]` |
+
+`position_min/max`と`velocity_min/max`はjoint可動範囲ではなくCAN packetのmotor-axis範囲です。`gear_ratio`はpositionとvelocityの指令・feedback変換に使用します。effortには適用しません。
+
+各jointには次のinterfaceを宣言してください。
+
+```xml
+<command_interface name="position"/>
+<command_interface name="velocity"/>
+<command_interface name="effort"/>
+
+<state_interface name="position"/>
+<state_interface name="velocity"/>
+<state_interface name="effort"/>
+<state_interface name="temperature"/>
+<state_interface name="fault"/>
+```
+
+`temperature`と`fault`のみ省略可能です。
+
+## 型番別xacro macro
+
+[`description/robstride_motor_profiles.xacro`](description/robstride_motor_profiles.xacro)に定義されています。
+
+| 型番 | macro | gear ratio | watchdog ticks |
+|---|---|---:|---:|
+| RS00 | `robstride_rs00_params` | `1.0` | `4000` |
+| RS02 | `robstride_rs02_params` | `1.0` | `4000` |
+| RS03 | `robstride_rs03_params` | `1.0` | `1200` |
+| RS04 | `robstride_rs04_params` | `1.0` | `2400` |
+| RS05 | `robstride_rs05_params` | `1.0` | `4000` |
+| RS06 | `robstride_rs06_params` | `1.0` | `4000` |
+| EduLite05 | `robstride_edulite05_params` | `9.0` | `4000` |
+
+使用例：
+
+```xml
+<xacro:include filename="$(find robstride_ros2)/description/robstride_motor_profiles.xacro"/>
+
+<joint name="wheel_joint_1">
+  <xacro:robstride_edulite05_params
+    can_id="1" direction="1" kp="20.0" kd="0.8"/>
+  <xacro:robstride_joint_interfaces/>
+</joint>
+```
+
+RS01 macroはありません。型番・firmwareごとのwire範囲が確認できる場合はJoint parametersを直接指定してください。
+
+## Controller
+
+| 制御 | controller type | command単位 | Type 1設定 |
+|---|---|---|---|
+| position | `position_controllers/JointGroupPositionController` | rad | position + Kp + Kd |
+| velocity | `velocity_controllers/JointGroupVelocityController` | rad/s | velocity + Kd、Kp=0 |
+| effort | `effort_controllers/JointGroupEffortController` | Nm | effort feed-forward、Kp=Kd=0 |
+
+同じjointで複数のcontrollerを同時にactiveにすることはできません。
+
+速度controllerへ切り替える例：
+
+```bash
 ros2 run controller_manager spawner robstride_velocity_controller \
-  --controller-manager /controller_manager
+  --inactive --controller-manager /controller_manager
+
 ros2 control switch_controllers \
   --deactivate robstride_position_controller \
   --activate robstride_velocity_controller \
   --controller-manager /controller_manager
-ros2 topic pub --rate 20 /robstride_velocity_controller/commands \
+
+ros2 topic pub --rate 20 \
+  /robstride_velocity_controller/commands \
   std_msgs/msg/Float64MultiArray "{data: [1.0]}"
 ```
 
-速度指令を止めるときは、まず速度0を送ってからcontrollerを停止します。
+effort controllerへ切り替える場合は、同様に`robstride_effort_controller`をload・activateします。
 
-```bash
-ros2 topic pub --once /robstride_velocity_controller/commands \
-  std_msgs/msg/Float64MultiArray "{data: [0.0]}"
-ros2 control switch_controllers \
-  --deactivate robstride_velocity_controller \
-  --activate robstride_position_controller \
-  --controller-manager /controller_manager
+## 複数モーター
+
+モーターごとに個別jointとCAN IDを定義し、controllerの`joints`でグループ分けします。
+
+CAN ID 1～4を速度、5～6を位置制御するcontroller設定例：
+
+```yaml
+wheel_velocity_controller:
+  ros__parameters:
+    joints: [joint_1, joint_2, joint_3, joint_4]
+
+steering_position_controller:
+  ros__parameters:
+    joints: [joint_5, joint_6]
 ```
 
-トルク制御はType 1 MIT/運控モードのトルクfeed-forwardです。単位は[Nm]です。
-
 ```bash
-ros2 run controller_manager spawner robstride_effort_controller \
-  --controller-manager /controller_manager
-ros2 control switch_controllers \
-  --deactivate robstride_position_controller \
-  --activate robstride_effort_controller \
-  --controller-manager /controller_manager
-ros2 topic pub --rate 20 /robstride_effort_controller/commands \
-  std_msgs/msg/Float64MultiArray "{data: [0.2]}"
+ros2 topic pub --rate 20 \
+  /wheel_velocity_controller/commands \
+  std_msgs/msg/Float64MultiArray "{data: [1.0, 1.0, 1.0, 1.0]}"
+
+ros2 topic pub --rate 20 \
+  /steering_position_controller/commands \
+  std_msgs/msg/Float64MultiArray "{data: [0.2, -0.2]}"
 ```
 
-トルクを停止する場合:
+## Timeoutと停止動作
 
-```bash
-ros2 topic pub --once /robstride_effort_controller/commands \
-  std_msgs/msg/Float64MultiArray "{data: [0.0]}"
-ros2 control switch_controllers \
-  --deactivate robstride_effort_controller \
-  --activate robstride_position_controller \
-  --controller-manager /controller_manager
+| 設定 | 動作 |
+|---|---|
+| `can_timeout_ticks` | CAN指令が途絶えるとモーター自身がResetへ移行 |
+| `feedback_timeout_ms` | Type 2が途絶えるとHardwareをERRORへ遷移し停止処理を実行 |
+| `shutdown_stop_repetitions` | 終了時にゼロ指令＋Type 4を再送 |
+| `shutdown_confirmation_timeout_ms` | Type 2のReset応答を待機 |
+
+EduLite05は`20000 ticks = 1秒`です。既定の`4000`は約200msです。`can_timeout_ticks`はactivate時に毎回モーターへ設定されます。
+
+activate時の送信順：
+
+```text
+fault clear -> CAN watchdog設定 -> run_mode=0 -> enable -> ゼロType 1
 ```
 
-`ros2 topic pub --rate`はCtrl-Cで終了してください。最後にcontroller managerを終了すると、Hardware Componentがゼロ指令とType 4 stopを送ります。
+deactivate、shutdown、error、active中のデストラクタではゼロType 1とType 4を送信します。Ctrl+C時に`ros2_socketcan`が先に終了した場合はType 4を配送できない可能性があるため、motor側watchdogを必須としています。
 
-## 安全上の注意
-
-最初はモーターを無負荷・低電圧・非常停止可能な状態に置き、低いKp/Kdから確認してください。Type 2の通常positionは±4πのwire範囲であり、多回転絶対位置を保証しません。`set_zero_on_activate=true`は起動のたびに機械ゼロを変更するため、用途を理解した場合だけ有効にしてください。
