@@ -2,7 +2,7 @@
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="robstride_example">
   <xacro:arg name="can_tx_topic" default="to_can_bus"/>
   <xacro:arg name="can_rx_topic" default="from_can_bus"/>
-  <xacro:include filename="$(find robstride_ros2)/description/robstride_motor_profiles.xacro"/>
+  <xacro:include filename="robstride_motor_profiles.xacro"/>
 
   <link name="base_link"/>
   <link name="robstride_link"/>
