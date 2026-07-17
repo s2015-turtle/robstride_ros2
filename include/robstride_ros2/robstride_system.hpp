@@ -54,6 +54,15 @@ public:
     const std::vector<std::string> & stop_interfaces) override;
 
 private:
+  struct StateValues
+  {
+    double position{0.0};
+    double velocity{0.0};
+    double effort{0.0};
+    double temperature{0.0};
+    double fault{0.0};
+  };
+
   struct Joint
   {
     std::string name;
@@ -65,11 +74,8 @@ private:
     double kp{0.0};
     double kd{0.0};
     uint32_t can_timeout_ticks{0};
-    double state_position{0.0};
-    double state_velocity{0.0};
-    double state_effort{0.0};
-    double state_temperature{0.0};
-    double state_fault{0.0};
+    StateValues state{};
+    StateValues received{};
     double command_position{0.0};
     double command_velocity{0.0};
     double command_effort{0.0};

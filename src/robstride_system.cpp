@@ -114,10 +114,9 @@ bool RobStrideSystem::parse_joint(const hardware_interface::ComponentInfo & info
 {
   try {
     joint.name = info.name;
-    joint.state_position = std::numeric_limits<double>::quiet_NaN();
-    joint.state_velocity = std::numeric_limits<double>::quiet_NaN();
-    joint.state_effort = std::numeric_limits<double>::quiet_NaN();
-    joint.state_temperature = std::numeric_limits<double>::quiet_NaN();
+    const double unknown = std::numeric_limits<double>::quiet_NaN();
+    joint.state = StateValues{unknown, unknown, unknown, unknown, 0.0};
+    joint.received = joint.state;
     joint.command_position = std::numeric_limits<double>::quiet_NaN();
     const int id = std::stoi(info.parameters.at("can_id"), nullptr, 0);
     if (id < 1 || id > 255) {throw std::runtime_error("can_id must be 1..255");}
@@ -193,15 +192,15 @@ std::vector<hardware_interface::StateInterface> RobStrideSystem::export_state_in
 {
   std::vector<hardware_interface::StateInterface> interfaces;
   for (auto & joint : joints_) {
-    interfaces.emplace_back(joint.name, hardware_interface::HW_IF_POSITION, &joint.state_position);
-    interfaces.emplace_back(joint.name, hardware_interface::HW_IF_VELOCITY, &joint.state_velocity);
-    interfaces.emplace_back(joint.name, hardware_interface::HW_IF_EFFORT, &joint.state_effort);
+    interfaces.emplace_back(joint.name, hardware_interface::HW_IF_POSITION, &joint.state.position);
+    interfaces.emplace_back(joint.name, hardware_interface::HW_IF_VELOCITY, &joint.state.velocity);
+    interfaces.emplace_back(joint.name, hardware_interface::HW_IF_EFFORT, &joint.state.effort);
     const auto & declared = info_.joints[&joint - joints_.data()].state_interfaces;
     for (const auto & item : declared) {
       if (item.name == "temperature") {
-        interfaces.emplace_back(joint.name, item.name, &joint.state_temperature);
+        interfaces.emplace_back(joint.name, item.name, &joint.state.temperature);
       } else if (item.name == "fault") {
-        interfaces.emplace_back(joint.name, item.name, &joint.state_fault);
+        interfaces.emplace_back(joint.name, item.name, &joint.state.fault);
       }
     }
   }
@@ -266,6 +265,14 @@ hardware_interface::CallbackReturn RobStrideSystem::on_activate(const rclcpp_lif
     disable_all();
     return hardware_interface::CallbackReturn::ERROR;
   }
+  {
+    // Controllers read the exported state variables without this transport mutex.
+    // Seed them before activation, then update them only from read().
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (auto & joint : joints_) {
+      joint.state = joint.received;
+    }
+  }
   activated_at_ = std::chrono::steady_clock::now();
   active_ = true;
   return hardware_interface::CallbackReturn::SUCCESS;
@@ -293,11 +300,15 @@ hardware_interface::CallbackReturn RobStrideSystem::on_error(const rclcpp_lifecy
 
 hardware_interface::return_type RobStrideSystem::read(const rclcpp::Time &, const rclcpp::Duration &)
 {
-  if (!active_ || !fail_on_feedback_timeout_) {return hardware_interface::return_type::OK;}
+  if (!active_) {return hardware_interface::return_type::OK;}
   const auto now = std::chrono::steady_clock::now();
   const auto timeout = std::chrono::milliseconds(feedback_timeout_ms_);
   std::lock_guard<std::mutex> lock(mutex_);
-  for (const auto & joint : joints_) {
+  for (auto & joint : joints_) {
+    if (joint.feedback_received) {
+      joint.state = joint.received;
+    }
+    if (!fail_on_feedback_timeout_) {continue;}
     const auto reference = joint.feedback_received ? joint.last_feedback : activated_at_;
     if (now - reference > timeout) {
       RCLCPP_ERROR_THROTTLE(
@@ -315,7 +326,7 @@ hardware_interface::return_type RobStrideSystem::write(const rclcpp::Time &, con
   std::lock_guard<std::mutex> lock(mutex_);
   for (const auto & joint : joints_) {
     const double joint_position = joint.position_active && std::isfinite(joint.command_position) ?
-      joint.command_position : joint.state_position;
+      joint.command_position : joint.state.position;
     const double motor_position = std::isfinite(joint_position) ?
       joint.direction * (joint_position - joint.position_offset) * joint.gear_ratio : 0.0;
     const double motor_velocity = joint.velocity_active && std::isfinite(joint.command_velocity) ?
@@ -371,7 +382,7 @@ hardware_interface::return_type RobStrideSystem::perform_command_mode_switch(
       for (auto & joint : joints_) {
         if (key == joint.name + "/position") {
           joint.position_active = value;
-          if (value) {joint.command_position = joint.state_position;}
+          if (value) {joint.command_position = joint.state.position;}
         } else if (key == joint.name + "/velocity") {
           joint.velocity_active = value;
           if (value) {joint.command_velocity = 0.0;}
@@ -412,11 +423,12 @@ void RobStrideSystem::receive_frame(const can_msgs::msg::Frame::ConstSharedPtr m
   if (!decoded) {return;}
   std::lock_guard<std::mutex> lock(mutex_);
   auto & joint = joints_[found->second];
-  joint.state_position = joint.direction * (decoded->position / joint.gear_ratio) + joint.position_offset;
-  joint.state_velocity = joint.direction * (decoded->velocity / joint.gear_ratio);
-  joint.state_effort = joint.direction * decoded->effort;
-  joint.state_temperature = decoded->temperature;
-  joint.state_fault = decoded->fault_flags;
+  joint.received.position =
+    joint.direction * (decoded->position / joint.gear_ratio) + joint.position_offset;
+  joint.received.velocity = joint.direction * (decoded->velocity / joint.gear_ratio);
+  joint.received.effort = joint.direction * decoded->effort;
+  joint.received.temperature = decoded->temperature;
+  joint.received.fault = decoded->fault_flags;
   joint.feedback_mode = decoded->mode;
   joint.feedback_received = true;
   joint.last_feedback = std::chrono::steady_clock::now();
