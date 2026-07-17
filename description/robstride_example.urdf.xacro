@@ -1,0 +1,51 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="robstride_example">
+  <xacro:arg name="can_tx_topic" default="to_can_bus"/>
+  <xacro:arg name="can_rx_topic" default="from_can_bus"/>
+
+  <link name="base_link"/>
+  <link name="robstride_link"/>
+  <joint name="robstride_joint" type="continuous">
+    <parent link="base_link"/>
+    <child link="robstride_link"/>
+    <axis xyz="0 0 1"/>
+  </joint>
+
+  <ros2_control name="robstride_system" type="system">
+    <hardware>
+      <plugin>robstride_ros2/RobStrideSystem</plugin>
+      <param name="host_can_id">253</param>
+      <param name="can_tx_topic">$(arg can_tx_topic)</param>
+      <param name="can_rx_topic">$(arg can_rx_topic)</param>
+      <param name="can_qos_depth">500</param>
+      <param name="feedback_timeout_ms">500</param>
+      <param name="fail_on_feedback_timeout">true</param>
+      <param name="clear_faults_on_activate">true</param>
+      <param name="set_zero_on_activate">false</param>
+    </hardware>
+    <joint name="robstride_joint">
+      <param name="can_id">1</param>
+      <!-- RS05 example. Confirm these values against the exact motor/firmware manual. -->
+      <param name="position_min">-12.566370614359172</param>
+      <param name="position_max">12.566370614359172</param>
+      <param name="velocity_min">-50.0</param>
+      <param name="velocity_max">50.0</param>
+      <param name="effort_min">-5.5</param>
+      <param name="effort_max">5.5</param>
+      <param name="kp_max">500.0</param>
+      <param name="kd_max">5.0</param>
+      <param name="kp">30.0</param>
+      <param name="kd">1.0</param>
+      <param name="direction">1</param>
+      <param name="position_offset">0.0</param>
+      <command_interface name="position"/>
+      <command_interface name="velocity"/>
+      <command_interface name="effort"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+      <state_interface name="effort"/>
+      <state_interface name="temperature"/>
+      <state_interface name="fault"/>
+    </joint>
+  </ros2_control>
+</robot>

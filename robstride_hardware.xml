@@ -1,0 +1,8 @@
+<library path="robstride_ros2">
+  <class
+    name="robstride_ros2/RobStrideSystem"
+    type="robstride_ros2::RobStrideSystem"
+    base_class_type="hardware_interface::SystemInterface">
+    <description>RobStride private-CAN protocol system using ros2_socketcan topics.</description>
+  </class>
+</library>
