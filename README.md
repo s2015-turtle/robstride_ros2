@@ -2,16 +2,6 @@
 
 RobStride Private Protocol用のROS 2 Humble `ros2_control` Hardware Componentです。CAN通信には`ros2_socketcan`の`can_msgs/msg/Frame`トピックを使用します。
 
-## 対応範囲
-
-- Type 1、`run_mode=0`によるposition / velocity / effort制御
-- Type 2によるposition / velocity / effort / temperature / fault取得
-- 1つのHardware Componentで複数モーターを制御
-- モーターごとにCAN ID、型番、方向、減速比、Kp/Kdを設定
-- モーターごとに異なるcontrollerを同時使用
-- CAN watchdogと終了時Type 4停止処理
-
-CANopen、11bit MIT Protocol、`run_mode=1/2/3/5`のパラメータ指令方式には対応していません。
 
 ## インストール
 
