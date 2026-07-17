@@ -74,6 +74,15 @@ Frame make_set_zero(uint8_t motor_id, uint8_t host_id)
   return frame;
 }
 
+Frame make_read_parameter(uint8_t motor_id, uint8_t host_id, uint16_t index)
+{
+  Frame frame;
+  frame.id = base_id(kTypeReadParameter, host_id, motor_id);
+  frame.data[0] = static_cast<uint8_t>(index & 0xff);
+  frame.data[1] = static_cast<uint8_t>(index >> 8);
+  return frame;
+}
+
 Frame make_write_u8(uint8_t motor_id, uint8_t host_id, uint16_t index, uint8_t value)
 {
   Frame frame;
@@ -126,6 +135,29 @@ std::optional<Feedback> decode_feedback(
   feedback.effort = decode_u16(get_be16(4), limits.effort_wire_min, limits.effort_wire_max);
   feedback.temperature = static_cast<double>(get_be16(6)) * 0.1;
   return feedback;
+}
+
+std::optional<ParameterResponse> decode_parameter_response(
+  uint32_t id, const std::array<uint8_t, 8> & data, uint8_t dlc, bool is_extended,
+  uint8_t expected_host_id)
+{
+  if (!is_extended || dlc != 8 || ((id >> 24) & 0x1f) != kTypeReadParameter ||
+    (id & 0xff) != expected_host_id)
+  {
+    return std::nullopt;
+  }
+
+  const uint16_t area = static_cast<uint16_t>((id >> 8) & 0xffff);
+  if ((area >> 8) != 0) {return std::nullopt;}
+  ParameterResponse response;
+  response.motor_id = static_cast<uint8_t>(area & 0xff);
+  response.index = static_cast<uint16_t>(data[0]) |
+    (static_cast<uint16_t>(data[1]) << 8);
+  response.value = static_cast<uint32_t>(data[4]) |
+    (static_cast<uint32_t>(data[5]) << 8) |
+    (static_cast<uint32_t>(data[6]) << 16) |
+    (static_cast<uint32_t>(data[7]) << 24);
+  return response;
 }
 
 }  // namespace robstride_ros2

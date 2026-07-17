@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="robstride_profile_test">
+  <xacro:include filename="../description/robstride_motor_profiles.xacro"/>
+  <ros2_control name="profile_test" type="system">
+    <hardware>
+      <plugin>robstride_ros2/RobStrideSystem</plugin>
+    </hardware>
+    <joint name="rs00"><xacro:robstride_rs00_params can_id="1"/><xacro:robstride_joint_interfaces/></joint>
+    <joint name="rs02"><xacro:robstride_rs02_params can_id="2"/><xacro:robstride_joint_interfaces/></joint>
+    <joint name="rs03"><xacro:robstride_rs03_params can_id="3"/><xacro:robstride_joint_interfaces/></joint>
+    <joint name="rs04"><xacro:robstride_rs04_params can_id="4"/><xacro:robstride_joint_interfaces/></joint>
+    <joint name="rs05"><xacro:robstride_rs05_params can_id="5"/><xacro:robstride_joint_interfaces/></joint>
+    <joint name="rs06"><xacro:robstride_rs06_params can_id="6"/><xacro:robstride_joint_interfaces/></joint>
+    <joint name="edulite05"><xacro:robstride_edulite05_params can_id="7"/><xacro:robstride_joint_interfaces/></joint>
+  </ros2_control>
+</robot>

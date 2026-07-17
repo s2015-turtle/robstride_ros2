@@ -1,0 +1,53 @@
+name: ROS 2 Humble CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install ROS 2 Humble
+        uses: ros-tooling/setup-ros@v0.7
+        with:
+          required-ros-distributions: humble
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          rosdep update
+          rosdep install --from-paths . --ignore-src --rosdistro humble -r -y
+
+      - name: Check xacro files
+        shell: bash
+        run: |
+          source /opt/ros/humble/setup.bash
+          xacro description/robstride_motor_profiles.xacro > /tmp/robstride_motor_profiles.urdf
+          xacro description/robstride_example.urdf.xacro > /tmp/robstride_example.urdf
+          xacro test/test_motor_profiles.urdf.xacro > /tmp/robstride_profile_test.urdf
+
+      - name: Build
+        shell: bash
+        run: |
+          source /opt/ros/humble/setup.bash
+          colcon build \
+            --base-paths . \
+            --packages-select robstride_ros2 \
+            --event-handlers console_cohesion+
+
+      - name: Test
+        shell: bash
+        run: |
+          source /opt/ros/humble/setup.bash
+          source install/setup.bash
+          colcon test \
+            --base-paths . \
+            --packages-select robstride_ros2 \
+            --event-handlers console_cohesion+
+          colcon test-result --verbose

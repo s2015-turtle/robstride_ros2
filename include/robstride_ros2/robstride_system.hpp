@@ -79,14 +79,21 @@ private:
     bool feedback_received{false};
     uint8_t feedback_mode{0};
     std::chrono::steady_clock::time_point last_feedback{};
+    bool parameter_received{false};
+    uint16_t last_parameter_index{0};
+    uint32_t last_parameter_value{0};
+    std::chrono::steady_clock::time_point last_parameter_response{};
   };
 
   bool parse_joint(const hardware_interface::ComponentInfo & info, Joint & joint);
   void receive_frame(const can_msgs::msg::Frame::ConstSharedPtr msg);
   void publish(const Frame & frame);
+  bool wait_for_transport();
+  bool write_and_confirm_parameter(Joint & joint, uint16_t index, uint32_t value);
+  bool enable_and_confirm_all();
   void disable_all();
   void stop_executor();
-  static bool parse_bool(const std::string & value, bool fallback);
+  static bool parse_bool(const std::string & value);
 
   std::vector<Joint> joints_;
   std::unordered_map<uint8_t, size_t> can_id_to_joint_;
@@ -103,7 +110,10 @@ private:
   int shutdown_stop_repetitions_{3};
   int shutdown_stop_interval_ms_{20};
   int shutdown_confirmation_timeout_ms_{300};
-  bool active_{false};
+  int startup_connection_timeout_ms_{3000};
+  int startup_confirmation_timeout_ms_{500};
+  int startup_retries_{3};
+  std::atomic<bool> active_{false};
   std::chrono::steady_clock::time_point activated_at_{};
 
   rclcpp::Node::SharedPtr node_;

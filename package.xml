@@ -4,8 +4,8 @@
   <name>robstride_ros2</name>
   <version>0.1.0</version>
   <description>ros2_control hardware component for RobStride CAN actuators via ros2_socketcan.</description>
-  <maintainer email="yamato@example.com">yamato</maintainer>
-  <license>Apache-2.0</license>
+  <maintainer email="ykturtler@outlook.com">yamato</maintainer>
+  <license>MIT</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
   <depend>can_msgs</depend>

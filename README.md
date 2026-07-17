@@ -53,6 +53,9 @@ ros2 topic pub --rate 20 \
 | `shutdown_stop_repetitions` | `3` | 終了時のゼロ指令＋Type 4送信回数 |
 | `shutdown_stop_interval_ms` | `20` | Type 4再送間隔 |
 | `shutdown_confirmation_timeout_ms` | `300` | Type 2 Reset応答の待機時間。`0`で確認無効 |
+| `startup_connection_timeout_ms` | `3000` | `ros2_socketcan` publisher/subscriber接続待ち時間 |
+| `startup_confirmation_timeout_ms` | `500` | parameter読み戻し・Run応答の1回あたり待機時間 |
+| `startup_retries` | `3` | 起動parameter設定・enableの再試行回数 |
 
 設定例：
 
@@ -69,6 +72,9 @@ ros2 topic pub --rate 20 \
   <param name="shutdown_stop_repetitions">3</param>
   <param name="shutdown_stop_interval_ms">20</param>
   <param name="shutdown_confirmation_timeout_ms">300</param>
+  <param name="startup_connection_timeout_ms">3000</param>
+  <param name="startup_confirmation_timeout_ms">500</param>
+  <param name="startup_retries">3</param>
 </hardware>
 ```
 
@@ -112,15 +118,15 @@ ros2 topic pub --rate 20 \
 
 [`description/robstride_motor_profiles.xacro`](description/robstride_motor_profiles.xacro)に定義されています。
 
-| 型番 | macro | gear ratio | watchdog ticks |
-|---|---|---:|---:|
-| RS00 | `robstride_rs00_params` | `1.0` | `4000` |
-| RS02 | `robstride_rs02_params` | `1.0` | `4000` |
-| RS03 | `robstride_rs03_params` | `1.0` | `1200` |
-| RS04 | `robstride_rs04_params` | `1.0` | `2400` |
-| RS05 | `robstride_rs05_params` | `1.0` | `4000` |
-| RS06 | `robstride_rs06_params` | `1.0` | `4000` |
-| EduLite05 | `robstride_edulite05_params` | `9.0` | `4000` |
+| 型番 | macro | gear ratio | watchdog ticks | 検証状態 |
+|---|---|---:|---:|---|
+| RS00 | `robstride_rs00_params` | `1.0` | `4000` | manual値、実機未検証 |
+| RS02 | `robstride_rs02_params` | `1.0` | `4000` | manual値、実機未検証 |
+| RS03 | `robstride_rs03_params` | `1.0` | `1200` | manual値、実機未検証 |
+| RS04 | `robstride_rs04_params` | `1.0` | `2400` | firmware照合必須 |
+| RS05 | `robstride_rs05_params` | `1.0` | `4000` | manual値、実機未検証 |
+| RS06 | `robstride_rs06_params` | `1.0` | `4000` | manual値、実機未検証 |
+| EduLite05 | `robstride_edulite05_params` | `1.0` | `4000` | CAN通信確認済み、firmware照合必須 |
 
 使用例：
 
@@ -134,7 +140,6 @@ ros2 topic pub --rate 20 \
 </joint>
 ```
 
-RS01 macroはありません。型番・firmwareごとのwire範囲が確認できる場合はJoint parametersを直接指定してください。
 
 ## Controller
 
@@ -201,11 +206,16 @@ ros2 topic pub --rate 20 \
 
 EduLite05は`20000 ticks = 1秒`です。既定の`4000`は約200msです。`can_timeout_ticks`はactivate時に毎回モーターへ設定されます。
 
-activate時の送信順：
+activate時は`ros2_socketcan`接続後、`canTimeout`と`run_mode`をType 17で読み戻し、全モーターのType 2 Run応答を確認してから成功します。
+
+送信順：
 
 ```text
-fault clear -> CAN watchdog設定 -> run_mode=0 -> enable -> ゼロType 1
+bridge接続待ち -> fault clear -> CAN watchdog設定/確認 -> run_mode=0設定/確認 -> enable -> Run確認
 ```
 
 deactivate、shutdown、error、active中のデストラクタではゼロType 1とType 4を送信します。Ctrl+C時に`ros2_socketcan`が先に終了した場合はType 4を配送できない可能性があるため、motor側watchdogを必須としています。
 
+## License
+
+MIT License。詳細は[`LICENSE`](LICENSE)を参照してください。

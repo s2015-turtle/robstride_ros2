@@ -60,8 +60,8 @@
     <param name="kp">${kp}</param><param name="kd">${kd}</param><param name="direction">${direction}</param><param name="gear_ratio">${gear_ratio}</param><param name="position_offset">${position_offset}</param>
   </xacro:macro>
 
-  <xacro:macro name="robstride_edulite05_params" params="can_id direction:=1 gear_ratio:=9.0 position_offset:=0.0 kp:=30.0 kd:=1.0 can_timeout_ticks:=4000">
-    <!-- Wire ranges are motor-axis values; gear_ratio converts position/velocity at the ROS interface. -->
+  <xacro:macro name="robstride_edulite05_params" params="can_id direction:=1 gear_ratio:=1.0 position_offset:=0.0 kp:=30.0 kd:=1.0 can_timeout_ticks:=4000">
+    <!-- EduLite05 firmware reports an output-axis value calculated from its motor encoder. -->
     <param name="can_id">${can_id}</param><param name="can_timeout_ticks">${can_timeout_ticks}</param><param name="position_min">-12.566370614</param><param name="position_max">12.566370614</param>
     <param name="velocity_min">-50.0</param><param name="velocity_max">50.0</param><param name="effort_min">-6.0</param><param name="effort_max">6.0</param>
     <param name="effort_wire_min">-6.0</param><param name="effort_wire_max">6.0</param><param name="kp_max">500.0</param><param name="kd_max">5.0</param>

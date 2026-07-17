@@ -38,11 +38,19 @@ struct Feedback
   double temperature{0.0};
 };
 
+struct ParameterResponse
+{
+  uint8_t motor_id{0};
+  uint16_t index{0};
+  uint32_t value{0};
+};
+
 constexpr uint8_t kTypeMotionControl = 1;
 constexpr uint8_t kTypeFeedback = 2;
 constexpr uint8_t kTypeEnable = 3;
 constexpr uint8_t kTypeStop = 4;
 constexpr uint8_t kTypeSetZero = 6;
+constexpr uint8_t kTypeReadParameter = 17;
 constexpr uint8_t kTypeWriteParameter = 18;
 constexpr uint16_t kIndexRunMode = 0x7005;
 constexpr uint16_t kIndexCanTimeout = 0x7028;
@@ -55,11 +63,15 @@ Frame make_motion_command(
 Frame make_enable(uint8_t motor_id, uint8_t host_id);
 Frame make_stop(uint8_t motor_id, uint8_t host_id, bool clear_fault = false);
 Frame make_set_zero(uint8_t motor_id, uint8_t host_id);
+Frame make_read_parameter(uint8_t motor_id, uint8_t host_id, uint16_t index);
 Frame make_write_u8(uint8_t motor_id, uint8_t host_id, uint16_t index, uint8_t value);
 Frame make_write_u32(uint8_t motor_id, uint8_t host_id, uint16_t index, uint32_t value);
 Frame make_write_float(uint8_t motor_id, uint8_t host_id, uint16_t index, float value);
 std::optional<Feedback> decode_feedback(
   uint32_t id, const std::array<uint8_t, 8> & data, uint8_t dlc, bool is_extended,
   uint8_t expected_host_id, const Limits & limits);
+std::optional<ParameterResponse> decode_parameter_response(
+  uint32_t id, const std::array<uint8_t, 8> & data, uint8_t dlc, bool is_extended,
+  uint8_t expected_host_id);
 
 }  // namespace robstride_ros2
