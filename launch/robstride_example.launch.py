@@ -13,6 +13,7 @@ def generate_launch_description():
     package_share = Path(get_package_share_directory("robstride_ros2"))
     socketcan_share = Path(get_package_share_directory("ros2_socketcan"))
     interface = LaunchConfiguration("interface")
+    controllers = str(package_share / "config/controllers.yaml")
     description = Command(
         ["xacro ", str(package_share / "description/robstride_example.urdf.xacro")]
     )
@@ -24,10 +25,8 @@ def generate_launch_description():
     control_node = Node(
         package="controller_manager",
         executable="ros2_control_node",
-        parameters=[
-            {"robot_description": description},
-            str(package_share / "config/controllers.yaml"),
-        ],
+        parameters=[controllers],
+        remappings=[("~/robot_description", "/robot_description")],
         output="screen",
     )
     state_publisher = Node(
@@ -44,7 +43,13 @@ def generate_launch_description():
     position = Node(
         package="controller_manager",
         executable="spawner",
-        arguments=["robstride_position_controller", "--controller-manager", "/controller_manager"],
+        arguments=[
+            "robstride_position_controller",
+            "--controller-manager",
+            "/controller_manager",
+            "--param-file",
+            controllers,
+        ],
     )
 
     return LaunchDescription(

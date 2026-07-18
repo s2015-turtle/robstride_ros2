@@ -1,7 +1,7 @@
 # robstride_ros2
 
-An unofficial, community-maintained ROS 2 Humble `ros2_control` hardware
-component for RobStride actuators using the RobStride private CAN protocol.
+An unofficial, community-maintained ROS 2 `ros2_control` hardware component for
+RobStride actuators using the RobStride private CAN protocol.
 CAN frames are exchanged through the `can_msgs/msg/Frame` topics provided by
 [`ros2_socketcan`](https://github.com/autowarefoundation/ros2_socketcan).
 
@@ -21,6 +21,29 @@ repository. The preserved Japanese README is available as
 - Startup parameter readback and motor-enable confirmation
 - Feedback timeout handling and repeated Type 4 stop frames during shutdown
 - A nonzero motor-side CAN watchdog configured on every activation
+
+## Supported ROS 2 distributions
+
+The same source branch targets all currently supported ROS 2 distributions.
+CI is configured to build and test every row independently with its Tier 1
+Ubuntu platform.
+
+| ROS 2 distribution | Ubuntu | `ros2_control` API |
+|---|---|---|
+| Humble | 22.04 (Jammy) | 2.x |
+| Jazzy | 24.04 (Noble) | 4.x |
+| Kilted | 24.04 (Noble) | 5.x |
+| Lyrical | 26.04 (Resolute) | 6.x |
+| Rolling | 26.04 (Resolute) | current development version |
+
+Humble and Jazzy use the original `HardwareInfo` initialization callback.
+Kilted, Lyrical, and Rolling use the newer
+`HardwareComponentInterfaceParams` callback selected at build time. No
+distribution-specific source branch is required.
+
+Rolling follows current upstream development and can introduce incompatible
+API changes before the next stable ROS 2 release. The Rolling CI job is the
+compatibility signal for the exact source revision being tested.
 
 ## Protocol and firmware assumptions
 
@@ -53,8 +76,8 @@ your robot description when required.
 
 ## Installation
 
-Install the package in the `src` directory of a ROS 2 Humble workspace, then
-resolve dependencies and build it:
+Install the package in the `src` directory of a workspace for one of the
+supported distributions, then resolve dependencies and build it:
 
 ```bash
 rosdep update
@@ -290,5 +313,5 @@ watchdog is the final fallback.
 ## References
 
 - [RobStride Product Information, revision `6ad12f5` (July 14, 2026)](https://github.com/RobStride/Product_Information/tree/6ad12f50006273b7ea4eea88980f927d97c22f0d)
-- [ros2_control: Writing a Hardware Component](https://control.ros.org/humble/doc/ros2_control/hardware_interface/doc/writing_new_hardware_component.html)
+- [ros2_control: Writing a Hardware Component](https://control.ros.org/rolling/doc/ros2_control/hardware_interface/doc/writing_new_hardware_component.html)
 - [`ros2_socketcan`](https://github.com/autowarefoundation/ros2_socketcan)

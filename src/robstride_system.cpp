@@ -49,6 +49,18 @@ bool RobStrideSystem::parse_bool(const std::string & value)
   throw std::runtime_error("boolean parameter must be true, false, 1, or 0; got '" + value + "'");
 }
 
+#ifdef ROBSTRIDE_ROS2_USE_HARDWARE_COMPONENT_PARAMS
+hardware_interface::CallbackReturn RobStrideSystem::on_init(
+  const hardware_interface::HardwareComponentInterfaceParams & params)
+{
+  if (hardware_interface::SystemInterface::on_init(params) !=
+    hardware_interface::CallbackReturn::SUCCESS)
+  {
+    return hardware_interface::CallbackReturn::ERROR;
+  }
+  return initialize_from_info(params.hardware_info);
+}
+#else
 hardware_interface::CallbackReturn RobStrideSystem::on_init(
   const hardware_interface::HardwareInfo & info)
 {
@@ -57,6 +69,13 @@ hardware_interface::CallbackReturn RobStrideSystem::on_init(
   {
     return hardware_interface::CallbackReturn::ERROR;
   }
+  return initialize_from_info(info);
+}
+#endif
+
+hardware_interface::CallbackReturn RobStrideSystem::initialize_from_info(
+  const hardware_interface::HardwareInfo & info)
+{
   try {
     const int host = std::stoi(hardware_parameter(info, "host_can_id", "253"), nullptr, 0);
     if (host < 0 || host > 255) {throw std::runtime_error("host_can_id must be 0..255");}
@@ -92,6 +111,8 @@ hardware_interface::CallbackReturn RobStrideSystem::on_init(
       throw std::runtime_error("invalid startup or shutdown timing parameters");
     }
 
+    joints_.clear();
+    can_id_to_joint_.clear();
     std::set<uint8_t> ids;
     joints_.reserve(info.joints.size());
     for (const auto & joint_info : info.joints) {

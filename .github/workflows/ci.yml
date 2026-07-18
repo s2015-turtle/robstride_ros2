@@ -1,33 +1,57 @@
-name: ROS 2 Humble CI
+name: ROS 2 CI
 
 on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   build-and-test:
-    runs-on: ubuntu-22.04
-    timeout-minutes: 20
+    name: ${{ matrix.ros_distro }}
+    runs-on: ubuntu-24.04
+    container: ${{ matrix.container }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ros_distro: humble
+            container: ubuntu:jammy
+          - ros_distro: jazzy
+            container: ubuntu:noble
+          - ros_distro: kilted
+            container: ubuntu:noble
+          - ros_distro: lyrical
+            container: ubuntu:resolute
+          - ros_distro: rolling
+            container: ubuntu:resolute
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
-      - name: Install ROS 2 Humble
+      - name: Install ROS 2 ${{ matrix.ros_distro }}
         uses: ros-tooling/setup-ros@v0.7
         with:
-          required-ros-distributions: humble
+          required-ros-distributions: ${{ matrix.ros_distro }}
 
       - name: Install dependencies
         shell: bash
         run: |
           rosdep update
-          rosdep install --from-paths . --ignore-src --rosdistro humble -r -y
+          rosdep install \
+            --from-paths . \
+            --ignore-src \
+            --rosdistro "${{ matrix.ros_distro }}" \
+            -r -y
 
       - name: Check xacro files
         shell: bash
         run: |
-          source /opt/ros/humble/setup.bash
+          source "/opt/ros/${{ matrix.ros_distro }}/setup.bash"
+          PYTHONPYCACHEPREFIX=/tmp/robstride_pycache python3 -m compileall -q launch
           xacro description/robstride_motor_profiles.xacro > /tmp/robstride_motor_profiles.urdf
           xacro description/robstride_example.urdf.xacro > /tmp/robstride_example.urdf
           xacro test/test_motor_profiles.urdf.xacro > /tmp/robstride_profile_test.urdf
@@ -35,7 +59,7 @@ jobs:
       - name: Build
         shell: bash
         run: |
-          source /opt/ros/humble/setup.bash
+          source "/opt/ros/${{ matrix.ros_distro }}/setup.bash"
           colcon build \
             --base-paths . \
             --packages-select robstride_ros2 \
@@ -44,7 +68,7 @@ jobs:
       - name: Test
         shell: bash
         run: |
-          source /opt/ros/humble/setup.bash
+          source "/opt/ros/${{ matrix.ros_distro }}/setup.bash"
           source install/setup.bash
           colcon test \
             --base-paths . \

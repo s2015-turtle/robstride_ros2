@@ -11,6 +11,9 @@
 #include <vector>
 
 #include <can_msgs/msg/frame.hpp>
+#ifdef ROBSTRIDE_ROS2_USE_HARDWARE_COMPONENT_PARAMS
+#include <hardware_interface/types/hardware_component_interface_params.hpp>
+#endif
 #include <hardware_interface/system_interface.hpp>
 #include <rclcpp/executors/single_threaded_executor.hpp>
 #include <rclcpp/rclcpp.hpp>
@@ -26,8 +29,13 @@ class RobStrideSystem : public hardware_interface::SystemInterface
 public:
   ~RobStrideSystem() override;
 
+#ifdef ROBSTRIDE_ROS2_USE_HARDWARE_COMPONENT_PARAMS
+  hardware_interface::CallbackReturn on_init(
+    const hardware_interface::HardwareComponentInterfaceParams & params) override;
+#else
   hardware_interface::CallbackReturn on_init(
     const hardware_interface::HardwareInfo & info) override;
+#endif
   std::vector<hardware_interface::StateInterface> export_state_interfaces() override;
   std::vector<hardware_interface::CommandInterface> export_command_interfaces() override;
   hardware_interface::CallbackReturn on_configure(
@@ -91,6 +99,8 @@ private:
     std::chrono::steady_clock::time_point last_parameter_response{};
   };
 
+  hardware_interface::CallbackReturn initialize_from_info(
+    const hardware_interface::HardwareInfo & info);
   bool parse_joint(const hardware_interface::ComponentInfo & info, Joint & joint);
   void receive_frame(const can_msgs::msg::Frame::ConstSharedPtr msg);
   void publish(const Frame & frame);
