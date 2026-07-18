@@ -36,11 +36,19 @@ jobs:
         uses: ros-tooling/setup-ros@v0.7
         with:
           required-ros-distributions: ${{ matrix.ros_distro }}
+          use-ros2-testing: ${{ matrix.ros_distro == 'rolling' }}
 
       - name: Install dependencies
         shell: bash
         run: |
-          rosdep update
+          for attempt in 1 2 3; do
+            if rosdep update; then
+              break
+            fi
+            if [ "${attempt}" -eq 3 ]; then
+              exit 1
+            fi
+          done
           rosdep install \
             --from-paths . \
             --ignore-src \
