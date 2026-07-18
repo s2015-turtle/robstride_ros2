@@ -11,7 +11,6 @@
   <url type="bugtracker">https://github.com/s2015-turtle/robstride_ros2/issues</url>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
-  <buildtool_depend>ament_cmake_target_dependencies</buildtool_depend>
   <depend>can_msgs</depend>
   <depend>hardware_interface</depend>
   <depend>pluginlib</depend>

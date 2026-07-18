@@ -7,7 +7,6 @@ endif()
 add_compile_options(-Wall -Wextra -Wpedantic)
 
 find_package(ament_cmake REQUIRED)
-find_package(ament_cmake_target_dependencies REQUIRED)
 find_package(can_msgs REQUIRED)
 find_package(hardware_interface REQUIRED)
 find_package(pluginlib REQUIRED)
@@ -32,9 +31,22 @@ if(ROBSTRIDE_ROS2_USE_HARDWARE_COMPONENT_PARAMS)
     PUBLIC ROBSTRIDE_ROS2_USE_HARDWARE_COMPONENT_PARAMS
   )
 endif()
-ament_target_dependencies(${PROJECT_NAME}
-  can_msgs hardware_interface pluginlib rclcpp rclcpp_lifecycle
-)
+if(COMMAND ament_target_dependencies)
+  # Humble through Kilted provide this compatibility macro.
+  ament_target_dependencies(${PROJECT_NAME}
+    can_msgs hardware_interface pluginlib rclcpp rclcpp_lifecycle
+  )
+else()
+  # The macro was removed after being deprecated in Kilted.  Use the modern
+  # imported targets on Lyrical and Rolling.
+  target_link_libraries(${PROJECT_NAME} PUBLIC
+    ${can_msgs_TARGETS}
+    hardware_interface::hardware_interface
+    pluginlib::pluginlib
+    rclcpp::rclcpp
+    rclcpp_lifecycle::rclcpp_lifecycle
+  )
+endif()
 pluginlib_export_plugin_description_file(hardware_interface robstride_hardware.xml)
 
 install(TARGETS ${PROJECT_NAME}
