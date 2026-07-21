@@ -19,7 +19,6 @@
       <param name="can_tx_topic">$(arg can_tx_topic)</param>
       <param name="can_rx_topic">$(arg can_rx_topic)</param>
       <param name="can_rx_qos_depth">32</param>
-      <param name="motion_command_lifespan_ms">50</param>
       <param name="feedback_timeout_ms">3000</param>
       <param name="fail_on_feedback_timeout">true</param>
       <param name="run_mode_recovery_timeout_ms">500</param>

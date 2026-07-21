@@ -55,7 +55,6 @@ ros2 topic pub --rate 20 \
 | `can_tx_topic` | `to_can_bus` | `ros2_socketcan`への送信topic |
 | `can_rx_topic` | `from_can_bus` | `ros2_socketcan`からの受信topic |
 | `can_rx_qos_depth` | `32` | 複数モーターのfeedback受信用QoSのdepth |
-| `motion_command_lifespan_ms` | `50` | 遅延したType 1指令をSocketCAN送信前に期限切れにする時間 |
 | `feedback_timeout_ms` | `3000` | Type 2が途絶えてからHardwareをERRORにするまでの時間 |
 | `fail_on_feedback_timeout` | `true` | feedback timeout時にHardwareをERRORへ遷移 |
 | `run_mode_recovery_timeout_ms` | `500` | active中にRunから外れたモーターの自動復帰を待つ時間 |
@@ -69,14 +68,24 @@ ros2 topic pub --rate 20 \
 | `startup_confirmation_timeout_ms` | `500` | parameter読み戻し・Run応答の1回あたり待機時間 |
 | `startup_retries` | `3` | 起動parameter設定・enableの再試行回数 |
 
+旧名の`can_qos_depth`も`can_rx_qos_depth`の非推奨aliasとして読み込みます。
+新しい設定では`can_rx_qos_depth`を使用してください。
+
+全送信frameは単一transport workerと単一DDS DataWriterを通るため、transactionと
+運転指令は一つのpublish順序を持ちます。DDSへ渡す前はモーターごとに未送信の最新Type 1を
+1件だけ保持します。DDSへ渡した後のbufferingはRMWと`ros2_socketcan`の管理対象であり、
+そのqueue内でモーターごとに最新1件となることまでは保証しません。
+
 Hardwareがactiveの間は、Type 2応答のmodeも監視します。モーターがResetなどの
 Run以外へ予期せず移行した場合はWARNを表示し、update loop内でDDS publishを行わずに
 Type 3 enableを再送します。Run応答を受信すれば運転を継続し、
 `run_mode_recovery_timeout_ms`以内にRunへ戻らなければ`read()`がERRORを返します。
 その後はcontroller managerがHardwareの`on_error()`を呼び、全モーターを停止します。
 復帰用Type 3もtransport threadから送るため、`read()`はDDS publishを行いません。
-deactivate時は未送信の復帰要求を破棄し、送信中のframeが完了してから停止処理を始めるため、
-停止開始後にEnableが送られることはありません。
+復帰中はそのモーターのType 1を保留し、Run応答後に最新指令を再開します。
+deactivate時はactive世代番号を更新して未送信frameを破棄するため、workerが取り出し済みの
+古いframeも次回activate後に送信されません。transport終了時はworkerを止める前に
+local queue内のlifecycle transactionを送出し、未送信の速度0・Type 4を破棄しません。
 
 設定例：
 

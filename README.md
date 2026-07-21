@@ -8,7 +8,7 @@ CAN frames are exchanged through the `can_msgs/msg/Frame` topics provided by
 This project is not affiliated with or endorsed by RobStride. The protocol and
 model profiles were checked against the English manuals in RobStride's official
 [`Product_Information`](https://github.com/RobStride/Product_Information)
-repository. The preserved Japanese README is available as
+repository. A Japanese README is available as
 [`README.ja.md`](README.ja.md).
 
 ## Features
@@ -147,7 +147,6 @@ description.
 | `can_tx_topic` | `to_can_bus` | Frames sent to `ros2_socketcan` |
 | `can_rx_topic` | `from_can_bus` | Frames received from `ros2_socketcan` |
 | `can_rx_qos_depth` | `32` | Reliable, volatile feedback QoS depth; increase for large motor groups |
-| `motion_command_lifespan_ms` | `50` | Expire delayed Type 1 samples before stale motion can reach SocketCAN |
 | `feedback_timeout_ms` | `3000` | Maximum time without Type 2 feedback before returning ERROR |
 | `fail_on_feedback_timeout` | `true` | Stop the hardware when feedback times out |
 | `run_mode_recovery_timeout_ms` | `500` | Time allowed for an active motor to recover to Run mode before returning ERROR |
@@ -161,33 +160,32 @@ description.
 | `startup_confirmation_timeout_ms` | `500` | Per-attempt parameter and enable confirmation timeout |
 | `startup_retries` | `3` | Number of startup parameter and enable attempts |
 
-Periodic Type 1 commands and automatic recovery Type 3 commands do not publish
-to DDS from the `ros2_control` update thread. Each motor has one latest slot for
-each kind, and a dedicated transport thread publishes those slots with recovery
-before motion. A new command replaces an unsent older command, so the component
-cannot build a stale motion-command queue. The motion publisher also applies a
-DDS lifespan so expired samples are removed from the `ros2_socketcan`
-subscription queue. Startup parameter transactions and shutdown frames remain
-synchronous because their acknowledgements and ordering are part of the
-hardware lifecycle.
+The deprecated `can_qos_depth` name is accepted as an alias for
+`can_rx_qos_depth`. New descriptions should use the current name.
 
-The motion publisher history depth is always the configured motor count. It is
-an internal invariant, not a user parameter: each cycle can contain one latest
-frame per motor and no older cycle is retained.
+All outgoing CAN frames pass through one transport worker and one DDS
+DataWriter, so lifecycle transactions and active commands have a single publish
+order. Before publication, each motor has one pending Type 1 slot; a newer
+command replaces an older unsent command. Transactions remain FIFO. Once a
+sample has been handed to DDS, delivery and buffering are governed by the RMW
+and `ros2_socketcan`; the driver does not claim per-motor latest-value semantics
+inside those downstream queues.
 
 While the hardware lifecycle state is active, every Type 2 response is also
 checked for Run mode. If a motor unexpectedly reports Reset or another non-Run
 mode, the component logs a warning and retries Type 3 enable through the
 transport worker, without synchronous DDS publication in the update loop. A
-subsequent Run response completes recovery. If
-Run is not confirmed before `run_mode_recovery_timeout_ms`, `read()` returns
+motor's Type 1 slot is held during recovery and released only after a subsequent
+Run response. If Run is not confirmed before `run_mode_recovery_timeout_ms`, `read()` returns
 ERROR; controller manager then invokes the hardware error lifecycle handling,
 which disables all motors and stops the transport.
 
-Deactivation first disables both asynchronous command slots and discards
-pending recovery. It then waits for any publication already in progress before
-sending stop transactions. This ordering prevents an Enable frame from being
-published after the stop sequence begins.
+Deactivation increments an active-generation counter, discards pending active
+frames, and waits for any publication already in progress before queuing stop
+transactions. Frames extracted by the worker under an older generation are
+rejected even if the hardware is later reactivated. Transport shutdown drains
+queued lifecycle transactions before stopping the worker, so locally queued
+zero-command and Type 4 frames are not discarded.
 
 Example:
 
@@ -198,7 +196,6 @@ Example:
   <param name="can_tx_topic">to_can_bus</param>
   <param name="can_rx_topic">from_can_bus</param>
   <param name="can_rx_qos_depth">32</param>
-  <param name="motion_command_lifespan_ms">50</param>
   <param name="feedback_timeout_ms">3000</param>
   <param name="fail_on_feedback_timeout">true</param>
   <param name="run_mode_recovery_timeout_ms">500</param>

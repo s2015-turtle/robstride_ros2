@@ -7,20 +7,22 @@
 namespace robstride_ros2
 {
 
-CanTransport::CanTransport(CanTransportOptions options, ReceiveCallback receive_callback)
-: options_(std::move(options)), receive_callback_(std::move(receive_callback))
+CanTransport::CanTransport(
+  CanTransportOptions options, ReceiveCallback receive_callback, FrameSink frame_sink)
+: options_(std::move(options)),
+  receive_callback_(std::move(receive_callback)),
+  frame_sink_(std::move(frame_sink)),
+  recovery_active_(std::make_unique<std::atomic<bool>[]>(options_.motor_count))
 {
   if (options_.node_name.empty()) {throw std::invalid_argument("node_name must not be empty");}
   if (options_.motor_count == 0) {throw std::invalid_argument("motor_count must be positive");}
   if (options_.receive_qos_depth == 0) {
     throw std::invalid_argument("receive_qos_depth must be positive");
   }
-  if (options_.motion_frame_lifespan.count() <= 0) {
-    throw std::invalid_argument("motion_frame_lifespan must be positive");
-  }
   if (!receive_callback_) {throw std::invalid_argument("receive_callback must be set");}
   pending_motion_frames_.resize(options_.motor_count);
   pending_recovery_frames_.resize(options_.motor_count);
+  for (size_t i = 0; i < options_.motor_count; ++i) {recovery_active_[i] = false;}
 }
 
 CanTransport::~CanTransport() noexcept
@@ -32,30 +34,24 @@ void CanTransport::start()
 {
   if (running_) {return;}
 
-  node_ = std::make_shared<rclcpp::Node>(options_.node_name);
-  const auto transaction_qos =
-    rclcpp::QoS(rclcpp::KeepLast(std::max<size_t>(32, options_.motor_count * 4)))
-    .reliable().durability_volatile();
-  auto motion_qos =
-    rclcpp::QoS(rclcpp::KeepLast(options_.motor_count))
-    .reliable().durability_volatile();
-  motion_qos.lifespan(rclcpp::Duration::from_seconds(
-      static_cast<double>(options_.motion_frame_lifespan.count()) / 1000.0));
-  const auto receive_qos =
-    rclcpp::QoS(rclcpp::KeepLast(options_.receive_qos_depth))
-    .reliable().durability_volatile();
+  if (!frame_sink_) {
+    node_ = std::make_shared<rclcpp::Node>(options_.node_name);
+    const auto qos =
+      rclcpp::QoS(rclcpp::KeepLast(std::max<size_t>(32, options_.motor_count * 4)))
+      .reliable().durability_volatile();
+    const auto receive_qos =
+      rclcpp::QoS(rclcpp::KeepLast(options_.receive_qos_depth))
+      .reliable().durability_volatile();
 
-  transaction_publisher_ =
-    node_->create_publisher<can_msgs::msg::Frame>(options_.transmit_topic, transaction_qos);
-  motion_publisher_ =
-    node_->create_publisher<can_msgs::msg::Frame>(options_.transmit_topic, motion_qos);
-  receive_subscription_ = node_->create_subscription<can_msgs::msg::Frame>(
-    options_.receive_topic, receive_qos, receive_callback_);
+    publisher_ = node_->create_publisher<can_msgs::msg::Frame>(options_.transmit_topic, qos);
+    receive_subscription_ = node_->create_subscription<can_msgs::msg::Frame>(
+      options_.receive_topic, receive_qos, receive_callback_);
+    executor_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
+    executor_->add_node(node_);
+  }
 
-  executor_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
-  executor_->add_node(node_);
   running_ = true;
-  executor_thread_ = std::thread([this]() {executor_->spin();});
+  if (executor_) {executor_thread_ = std::thread([this]() {executor_->spin();});}
   worker_thread_ = std::thread([this]() {transmit_pending_frames();});
 }
 
@@ -65,7 +61,14 @@ void CanTransport::stop()
   running_ = false;
   pending_condition_.notify_all();
   if (worker_thread_.joinable()) {worker_thread_.join();}
-  discard_pending_frames();
+
+  {
+    std::lock_guard<std::mutex> lock(pending_mutex_);
+    pending_transactions_.clear();
+    transactions_in_flight_ = 0;
+    for (auto & pending : pending_motion_frames_) {pending.reset();}
+    for (auto & pending : pending_recovery_frames_) {pending.reset();}
+  }
 
   if (executor_) {executor_->cancel();}
   if (executor_thread_.joinable()) {executor_thread_.join();}
@@ -73,8 +76,7 @@ void CanTransport::stop()
   receive_subscription_.reset();
   {
     std::lock_guard<std::mutex> lock(publisher_mutex_);
-    motion_publisher_.reset();
-    transaction_publisher_.reset();
+    publisher_.reset();
   }
   if (executor_ && node_) {executor_->remove_node(node_);}
   executor_.reset();
@@ -83,11 +85,10 @@ void CanTransport::stop()
 
 bool CanTransport::wait_for_endpoints(std::chrono::milliseconds timeout) const
 {
+  if (frame_sink_) {return running_;}
   const auto deadline = std::chrono::steady_clock::now() + timeout;
   while (std::chrono::steady_clock::now() < deadline) {
-    if (transaction_publisher_ && motion_publisher_ && receive_subscription_ &&
-      transaction_publisher_->get_subscription_count() > 0 &&
-      motion_publisher_->get_subscription_count() > 0 &&
+    if (publisher_ && receive_subscription_ && publisher_->get_subscription_count() > 0 &&
       receive_subscription_->get_publisher_count() > 0)
     {
       return true;
@@ -99,16 +100,23 @@ bool CanTransport::wait_for_endpoints(std::chrono::milliseconds timeout) const
 
 void CanTransport::send_transaction(const Frame & frame)
 {
-  publish_transaction(frame);
+  if (!running_) {return;}
+  {
+    std::lock_guard<std::mutex> lock(pending_mutex_);
+    if (!running_) {return;}
+    pending_transactions_.push_back(frame);
+  }
+  pending_condition_.notify_one();
 }
 
 void CanTransport::queue_motion_frame(size_t motor_index, const Frame & frame)
 {
   if (!active_commands_enabled_ || motor_index >= options_.motor_count) {return;}
+  const uint64_t generation = active_generation_;
   {
     std::lock_guard<std::mutex> lock(pending_mutex_);
-    if (!active_commands_enabled_) {return;}
-    pending_motion_frames_[motor_index] = frame;
+    if (!active_commands_enabled_ || generation != active_generation_) {return;}
+    pending_motion_frames_[motor_index] = ActiveFrame{frame, motor_index, generation};
   }
   pending_condition_.notify_one();
 }
@@ -116,10 +124,26 @@ void CanTransport::queue_motion_frame(size_t motor_index, const Frame & frame)
 void CanTransport::queue_recovery_frame(size_t motor_index, const Frame & frame)
 {
   if (!active_commands_enabled_ || motor_index >= options_.motor_count) {return;}
+  recovery_active_[motor_index] = true;
+  const uint64_t generation = active_generation_;
   {
     std::lock_guard<std::mutex> lock(pending_mutex_);
-    if (!active_commands_enabled_) {return;}
-    pending_recovery_frames_[motor_index] = frame;
+    if (!active_commands_enabled_ || generation != active_generation_) {
+      recovery_active_[motor_index] = false;
+      return;
+    }
+    pending_recovery_frames_[motor_index] = ActiveFrame{frame, motor_index, generation};
+  }
+  pending_condition_.notify_one();
+}
+
+void CanTransport::complete_recovery(size_t motor_index)
+{
+  if (motor_index >= options_.motor_count) {return;}
+  recovery_active_[motor_index] = false;
+  {
+    std::lock_guard<std::mutex> lock(pending_mutex_);
+    pending_recovery_frames_[motor_index].reset();
   }
   pending_condition_.notify_one();
 }
@@ -133,46 +157,59 @@ void CanTransport::enable_active_commands()
 void CanTransport::disable_active_commands()
 {
   active_commands_enabled_ = false;
-  discard_pending_frames();
-  // Wait for a frame that already passed the enabled check. Stop transactions sent after this
-  // method therefore always follow every in-flight recovery or motion publication.
+  ++active_generation_;
+  for (size_t i = 0; i < options_.motor_count; ++i) {recovery_active_[i] = false;}
+  discard_pending_active_frames();
+  // A frame already being published completes before lifecycle stop transactions are queued.
+  // Extracted frames from an older generation are rejected even after a later reactivation.
   std::lock_guard<std::mutex> lock(publisher_mutex_);
 }
 
-bool CanTransport::wait_for_transaction_acknowledgements(std::chrono::milliseconds timeout) const
+bool CanTransport::wait_for_transaction_acknowledgements(
+  std::chrono::milliseconds timeout) const
 {
-  std::lock_guard<std::mutex> lock(publisher_mutex_);
-  if (!transaction_publisher_ || transaction_publisher_->get_subscription_count() == 0) {
-    return false;
+  const auto deadline = std::chrono::steady_clock::now() + timeout;
+  {
+    std::unique_lock<std::mutex> lock(pending_mutex_);
+    if (!pending_condition_.wait_until(lock, deadline, [this]() {
+        return pending_transactions_.empty() && transactions_in_flight_ == 0;
+      }))
+    {
+      return false;
+    }
   }
-  return transaction_publisher_->wait_for_all_acked(timeout);
+
+  if (frame_sink_) {return true;}
+  const auto now = std::chrono::steady_clock::now();
+  if (now >= deadline) {return false;}
+  std::lock_guard<std::mutex> lock(publisher_mutex_);
+  if (!publisher_ || publisher_->get_subscription_count() == 0) {return false;}
+  return publisher_->wait_for_all_acked(
+    std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now));
 }
 
 void CanTransport::publish_transaction(const Frame & frame)
 {
   std::lock_guard<std::mutex> lock(publisher_mutex_);
-  publish_unlocked(transaction_publisher_, frame);
+  publish_unlocked(frame);
 }
 
-void CanTransport::publish_motion(const Frame & frame)
+void CanTransport::publish_active(const ActiveFrame & frame, bool is_recovery)
 {
   std::lock_guard<std::mutex> lock(publisher_mutex_);
-  if (!active_commands_enabled_) {return;}
-  publish_unlocked(motion_publisher_, frame);
+  if (!active_commands_enabled_ || frame.generation != active_generation_) {return;}
+  const bool recovering = recovery_active_[frame.motor_index];
+  if ((is_recovery && !recovering) || (!is_recovery && recovering)) {return;}
+  publish_unlocked(frame.frame);
 }
 
-void CanTransport::publish_recovery(const Frame & frame)
+void CanTransport::publish_unlocked(const Frame & source)
 {
-  std::lock_guard<std::mutex> lock(publisher_mutex_);
-  if (!active_commands_enabled_) {return;}
-  publish_unlocked(transaction_publisher_, frame);
-}
-
-void CanTransport::publish_unlocked(
-  const rclcpp::Publisher<can_msgs::msg::Frame>::SharedPtr & publisher,
-  const Frame & source)
-{
-  if (!publisher) {return;}
+  if (frame_sink_) {
+    frame_sink_(source);
+    return;
+  }
+  if (!publisher_) {return;}
 
   can_msgs::msg::Frame message;
   message.header.stamp = node_->now();
@@ -182,55 +219,73 @@ void CanTransport::publish_unlocked(
   message.is_error = false;
   message.dlc = 8;
   message.data = source.data;
-  publisher->publish(message);
+  publisher_->publish(message);
 }
 
 void CanTransport::transmit_pending_frames()
 {
-  std::vector<Frame> recovery_frames;
-  std::vector<Frame> motion_frames;
+  std::deque<Frame> transactions;
+  std::vector<ActiveFrame> recovery_frames;
+  std::vector<ActiveFrame> motion_frames;
   recovery_frames.reserve(options_.motor_count);
   motion_frames.reserve(options_.motor_count);
 
-  while (running_) {
+  while (true) {
     std::unique_lock<std::mutex> lock(pending_mutex_);
     pending_condition_.wait(lock, [this]() {
-      if (!running_) {return true;}
-      const bool has_motion = std::any_of(
-        pending_motion_frames_.begin(), pending_motion_frames_.end(),
-        [](const std::optional<Frame> & frame) {return frame.has_value();});
-      const bool has_recovery = std::any_of(
-        pending_recovery_frames_.begin(), pending_recovery_frames_.end(),
-        [](const std::optional<Frame> & frame) {return frame.has_value();});
-      return has_motion || has_recovery;
+      return !running_ || !pending_transactions_.empty() || has_sendable_active_frame();
     });
-    if (!running_) {break;}
+    if (!running_ && pending_transactions_.empty()) {break;}
 
+    transactions.clear();
     recovery_frames.clear();
     motion_frames.clear();
-    for (auto & pending : pending_recovery_frames_) {
-      if (!pending) {continue;}
-      recovery_frames.push_back(*pending);
-      pending.reset();
-    }
-    for (auto & pending : pending_motion_frames_) {
-      if (!pending) {continue;}
-      motion_frames.push_back(*pending);
-      pending.reset();
+    transactions.swap(pending_transactions_);
+    transactions_in_flight_ += transactions.size();
+    if (running_) {
+      for (auto & pending : pending_recovery_frames_) {
+        if (!pending) {continue;}
+        recovery_frames.push_back(*pending);
+        pending.reset();
+      }
+      for (size_t i = 0; i < pending_motion_frames_.size(); ++i) {
+        auto & pending = pending_motion_frames_[i];
+        if (!pending || recovery_active_[i]) {continue;}
+        motion_frames.push_back(*pending);
+        pending.reset();
+      }
     }
     lock.unlock();
 
-    // Enable must precede a motion frame when both are pending for a reset motor.
-    for (const auto & frame : recovery_frames) {publish_recovery(frame);}
-    for (const auto & frame : motion_frames) {publish_motion(frame);}
+    for (const auto & frame : transactions) {publish_transaction(frame);}
+    for (const auto & frame : recovery_frames) {publish_active(frame, true);}
+    for (const auto & frame : motion_frames) {publish_active(frame, false);}
+
+    if (!transactions.empty()) {
+      std::lock_guard<std::mutex> completed_lock(pending_mutex_);
+      transactions_in_flight_ -= transactions.size();
+      pending_condition_.notify_all();
+    }
   }
 }
 
-void CanTransport::discard_pending_frames()
+void CanTransport::discard_pending_active_frames()
 {
   std::lock_guard<std::mutex> lock(pending_mutex_);
   for (auto & pending : pending_motion_frames_) {pending.reset();}
   for (auto & pending : pending_recovery_frames_) {pending.reset();}
+}
+
+bool CanTransport::has_sendable_active_frame() const
+{
+  const bool has_recovery = std::any_of(
+    pending_recovery_frames_.begin(), pending_recovery_frames_.end(),
+    [](const std::optional<ActiveFrame> & frame) {return frame.has_value();});
+  if (has_recovery) {return true;}
+  for (size_t i = 0; i < pending_motion_frames_.size(); ++i) {
+    if (pending_motion_frames_[i] && !recovery_active_[i]) {return true;}
+  }
+  return false;
 }
 
 }  // namespace robstride_ros2

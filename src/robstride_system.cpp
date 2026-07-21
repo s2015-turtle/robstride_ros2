@@ -104,10 +104,19 @@ hardware_interface::CallbackReturn RobStrideSystem::initialize_from_info(
     settings_.transport.receive_topic =
       hardware_parameter_or(info, "can_rx_topic", "from_can_bus");
 
-    settings_.transport.receive_qos_depth = static_cast<size_t>(std::stoul(hardware_parameter_or(
-          info, "can_rx_qos_depth", "32")));
-    settings_.transport.motion_frame_lifespan = std::chrono::milliseconds(std::stoi(
-          hardware_parameter_or(info, "motion_command_lifespan_ms", "50")));
+    const auto receive_qos_parameter = info.hardware_parameters.find("can_rx_qos_depth");
+    const auto legacy_qos_parameter = info.hardware_parameters.find("can_qos_depth");
+    const std::string receive_qos_depth = receive_qos_parameter != info.hardware_parameters.end() ?
+      receive_qos_parameter->second :
+      (legacy_qos_parameter != info.hardware_parameters.end() ? legacy_qos_parameter->second : "32");
+    settings_.transport.receive_qos_depth = static_cast<size_t>(std::stoul(receive_qos_depth));
+    if (receive_qos_parameter == info.hardware_parameters.end() &&
+      legacy_qos_parameter != info.hardware_parameters.end())
+    {
+      RCLCPP_WARN(
+        driver_logger(),
+        "Hardware parameter 'can_qos_depth' is deprecated; use 'can_rx_qos_depth'");
+    }
 
     settings_.feedback_timeout = std::chrono::milliseconds(std::stoi(
           hardware_parameter_or(info, "feedback_timeout_ms", "3000")));
@@ -134,15 +143,13 @@ hardware_interface::CallbackReturn RobStrideSystem::initialize_from_info(
     settings_.startup_retries =
       std::stoi(hardware_parameter_or(info, "startup_retries", "3"));
 
-    if (settings_.transport.receive_qos_depth == 0 ||
-      settings_.transport.motion_frame_lifespan.count() <= 0 ||
-      settings_.feedback_timeout.count() <= 0 ||
+    if (settings_.transport.receive_qos_depth == 0 || settings_.feedback_timeout.count() <= 0 ||
       settings_.run_mode_recovery_timeout.count() <= 0 ||
       settings_.run_mode_recovery_retry_interval.count() <= 0 ||
       settings_.run_mode_recovery_retry_interval > settings_.run_mode_recovery_timeout)
     {
       throw std::runtime_error(
-              "CAN QoS depths, command lifespan, feedback timeout, and Run-mode recovery "
+              "CAN QoS depth, feedback timeout, and Run-mode recovery "
               "timings must be positive; recovery retry interval must not exceed its timeout");
     }
     if (settings_.shutdown_stop_repetitions <= 0 ||
@@ -415,6 +422,7 @@ hardware_interface::return_type RobStrideSystem::read(const rclcpp::Time &, cons
         recovery, joint.feedback_status.mode, now, settings_.run_mode_recovery_timeout,
         settings_.run_mode_recovery_retry_interval);
       if (recovery_action == RunModeRecoveryAction::recovered) {
+        transport_->complete_recovery(joint_index);
         runtime_events_.push_back(
           RuntimeEvent{
             RuntimeEventKind::recovered, joint_index, kMotorModeRun, attempts_before_update});
@@ -657,18 +665,26 @@ void RobStrideSystem::disable_all()
   active_ = false;
   transport_->disable_active_commands();
   const auto stop_started = std::chrono::steady_clock::now();
+  bool stop_frames_acknowledged = false;
   for (int attempt = 0; attempt < settings_.shutdown_stop_repetitions; ++attempt) {
     for (const auto & joint : joints_) {
       transport_->send_transaction(
         make_motion_command(joint.can_id, joint.limits, 0.0, 0.0, 0.0, 0.0, 0.0));
       transport_->send_transaction(make_stop(joint.can_id, settings_.host_id));
     }
-    (void)transport_->wait_for_transaction_acknowledgements(std::chrono::milliseconds(50));
+    stop_frames_acknowledged =
+      transport_->wait_for_transaction_acknowledgements(std::chrono::milliseconds(50));
     if (attempt + 1 < settings_.shutdown_stop_repetitions &&
       settings_.shutdown_stop_interval.count() > 0)
     {
       std::this_thread::sleep_for(settings_.shutdown_stop_interval);
     }
+  }
+  if (!stop_frames_acknowledged) {
+    RCLCPP_WARN(
+      driver_logger(),
+      "Stop frames were not acknowledged by DDS; transport shutdown will still drain its local "
+      "transaction queue and the motor watchdog remains the final fallback");
   }
 
   if (settings_.shutdown_confirmation_timeout.count() > 0) {
