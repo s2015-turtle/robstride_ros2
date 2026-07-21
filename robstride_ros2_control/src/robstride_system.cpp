@@ -57,7 +57,7 @@ hardware_interface::CallbackReturn RobStrideSystem::on_init(
   }
   try {
     return impl_->driver.initialize(
-      parse_driver_configuration(params.hardware_info, rclcpp::get_logger("RobStrideSystem"))) ?
+      parse_driver_configuration(params.hardware_info)) ?
            hardware_interface::CallbackReturn::SUCCESS : hardware_interface::CallbackReturn::ERROR;
   } catch (const std::exception & error) {
     RCLCPP_ERROR(
@@ -76,7 +76,7 @@ hardware_interface::CallbackReturn RobStrideSystem::on_init(
   }
   try {
     return impl_->driver.initialize(
-      parse_driver_configuration(info, rclcpp::get_logger("RobStrideSystem"))) ?
+      parse_driver_configuration(info)) ?
            hardware_interface::CallbackReturn::SUCCESS : hardware_interface::CallbackReturn::ERROR;
   } catch (const std::exception & error) {
     RCLCPP_ERROR(

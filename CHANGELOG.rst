@@ -17,8 +17,6 @@ Forthcoming
   frames from earlier hardware activations with a generation counter.
 * Keep one pending motion frame per motor before DDS publication and expose
   only the receive QoS depth as a hardware parameter.
-* Accept the former ``can_qos_depth`` name as a deprecated alias for
-  ``can_rx_qos_depth``; transmit history is now managed internally.
 * Separate SocketCAN topic transport from the ros2_control hardware lifecycle,
   and group joint runtime data by state, command, claim, and response status.
 * Reduce ``RobStrideSystem`` to a thin ros2_control adapter and move configuration,
