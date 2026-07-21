@@ -22,25 +22,27 @@ repository. A Japanese README is available as
 - Feedback timeout handling and repeated Type 4 stop frames during shutdown
 - A nonzero motor-side CAN watchdog configured on every activation
 
-## Internal structure
+## Package structure
 
-Only the plugin adapter is installed as a public header. Driver implementation
-details remain internal and are separated by responsibility:
+The repository is a four-package workspace with a one-way dependency graph:
 
-| Component | Responsibility |
+| Package | Responsibility |
 |---|---|
-| `RobStrideSystem` | Thin `ros2_control` adapter: callbacks, interface export, and return-code mapping |
-| `RobStrideDriver` | Motor startup, shutdown, feedback processing, commands, and Run-mode recovery |
-| `driver_config` | Hardware and joint parameter parsing and validation |
-| `JointData` | Per-joint configuration, exported state, commands, feedback, and recovery state |
-| `CanTransport` | `ros2_socketcan` topics, QoS, executor, latest motion, and recovery delivery |
-| `protocol` | RobStride extended CAN identifier and payload encoding/decoding |
-| `command_mode` | Validation of per-joint position, velocity, and effort claims |
+| `robstride_driver` | Public driver library: protocol, `ros2_socketcan` topic transport, motor lifecycle, feedback, and Run-mode recovery |
+| `robstride_ros2_control` | Thin `hardware_interface::SystemInterface` adapter and plugin registration |
+| `robstride_examples` | Motor-profile Xacro, controller configuration, and example launch |
+| `robstride_ros2` | Compatibility entry point preserving the original launch, configuration, Xacro, and plugin identifiers |
 
-`RobStrideSystem` translates `on_configure`, `on_activate`, `read`, and `write`
-to the driver's `open`, `start`, `update_state`, and `send_commands` operations.
-Joint runtime data is grouped by purpose, and the state mutex never protects a
-DDS publish operation.
+`robstride_driver` does not depend on `hardware_interface`. HardwareInfo parsing
+and command-interface switching belong to `robstride_ros2_control`, which maps
+the standard lifecycle callbacks to the driver's `open`, `start`,
+`update_state`, and `send_commands` operations.
+Installable headers live under each package's `include/` tree. Private adapter
+headers live under `robstride_ros2_control/internal/` and are never installed.
+The plugin, launch, and Xacro identifiers remain compatible. Code that directly
+included the former `<robstride_ros2/robstride_system.hpp>` development header
+must migrate to `<robstride_ros2_control/robstride_system.hpp>` and link
+`robstride_ros2_control`.
 
 ## Supported ROS 2 distributions
 
@@ -102,7 +104,7 @@ supported distributions, then resolve dependencies and build it:
 ```bash
 rosdep update
 rosdep install --from-paths src --ignore-src -r -y
-colcon build --packages-select robstride_ros2 --symlink-install
+colcon build --packages-up-to robstride_ros2 --symlink-install
 source install/setup.bash
 ```
 
@@ -118,7 +120,13 @@ sudo ip link set can0 up
 ## Example launch
 
 The example uses motor CAN ID 1 with the EL05 profile and starts the position
-controller:
+controller. The canonical package is `robstride_examples`:
+
+```bash
+ros2 launch robstride_examples robstride_example.launch.py interface:=can0
+```
+
+The original command remains available through the compatibility package:
 
 ```bash
 ros2 launch robstride_ros2 robstride_example.launch.py interface:=can0
@@ -256,7 +264,7 @@ state interfaces. `temperature` and `fault` are optional state interfaces:
 ## Model profile macros
 
 The predefined macros are in
-[`description/robstride_motor_profiles.xacro`](description/robstride_motor_profiles.xacro).
+[`robstride_examples/description/robstride_motor_profiles.xacro`](robstride_examples/description/robstride_motor_profiles.xacro).
 
 | Model | Macro | Default watchdog ticks |
 |---|---|---:|
@@ -272,7 +280,7 @@ The predefined macros are in
 Example:
 
 ```xml
-<xacro:include filename="$(find robstride_ros2)/description/robstride_motor_profiles.xacro"/>
+<xacro:include filename="$(find robstride_examples)/description/robstride_motor_profiles.xacro"/>
 
 <joint name="wheel_joint_1">
   <xacro:robstride_edulite05_params

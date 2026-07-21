@@ -59,10 +59,26 @@ jobs:
         shell: bash
         run: |
           source "/opt/ros/${{ matrix.ros_distro }}/setup.bash"
-          PYTHONPYCACHEPREFIX=/tmp/robstride_pycache python3 -m compileall -q launch
-          xacro description/robstride_motor_profiles.xacro > /tmp/robstride_motor_profiles.urdf
-          xacro description/robstride_example.urdf.xacro > /tmp/robstride_example.urdf
-          xacro test/test_motor_profiles.urdf.xacro > /tmp/robstride_profile_test.urdf
+          PYTHONPYCACHEPREFIX=/tmp/robstride_pycache python3 -m compileall -q \
+            robstride_examples/launch robstride_ros2/launch
+          xacro robstride_examples/description/robstride_motor_profiles.xacro \
+            > /tmp/robstride_motor_profiles.urdf
+          xacro robstride_examples/description/robstride_example.urdf.xacro \
+            > /tmp/robstride_example.urdf
+          xacro robstride_examples/test/test_motor_profiles.urdf.xacro \
+            > /tmp/robstride_profile_test.urdf
+
+      - name: Check package set
+        shell: bash
+        run: |
+          source "/opt/ros/${{ matrix.ros_distro }}/setup.bash"
+          expected="robstride_driver
+          robstride_examples
+          robstride_ros2
+          robstride_ros2_control"
+          actual="$(colcon list --base-paths . --names-only | sort)"
+          test "${actual}" = "${expected}"
+          cmp robstride_examples/config/controllers.yaml robstride_ros2/config/controllers.yaml
 
       - name: Build
         shell: bash
@@ -70,8 +86,22 @@ jobs:
           source "/opt/ros/${{ matrix.ros_distro }}/setup.bash"
           colcon build \
             --base-paths . \
-            --packages-select robstride_ros2 \
             --event-handlers console_cohesion+
+
+      - name: Check installed resources
+        shell: bash
+        run: |
+          source "/opt/ros/${{ matrix.ros_distro }}/setup.bash"
+          source install/setup.bash
+          ros2 pkg prefix robstride_driver
+          ros2 pkg prefix robstride_ros2_control
+          ros2 pkg prefix robstride_examples
+          ros2 pkg prefix robstride_ros2
+          test -f "$(ros2 pkg prefix robstride_ros2)/share/robstride_ros2/config/controllers.yaml"
+          xacro "$(ros2 pkg prefix robstride_examples)/share/robstride_examples/description/robstride_example.urdf.xacro" \
+            > /tmp/robstride_installed_example.urdf
+          xacro "$(ros2 pkg prefix robstride_ros2)/share/robstride_ros2/description/robstride_example.urdf.xacro" \
+            > /tmp/robstride_compatibility_example.urdf
 
       - name: Test
         shell: bash
@@ -80,6 +110,5 @@ jobs:
           source install/setup.bash
           colcon test \
             --base-paths . \
-            --packages-select robstride_ros2 \
             --event-handlers console_cohesion+
           colcon test-result --verbose

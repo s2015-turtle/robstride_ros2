@@ -2,19 +2,20 @@
 
 RobStride Private Protocol用のROS 2 `ros2_control` Hardware Componentです。Humble、Jazzy、Kilted、Lyrical、Rollingに対応し、CAN通信には`ros2_socketcan`の`can_msgs/msg/Frame`トピックを使用します。
 
-## 内部構成
+## パッケージ構成
 
-| component | 責務 |
+依存関係が一方向になるよう、4つのament packageへ分離しています。
+
+| package | 責務 |
 |---|---|
-| `RobStrideSystem` | `ros2_control` callback、interface export、戻り値変換だけを行うadapter |
-| `RobStrideDriver` | モーター起動・停止、feedback、指令送信、Run mode復旧 |
-| `driver_config` | Hardwareおよびjoint parameterの解析・検証 |
-| `JointData` | jointごとの固定設定、公開state、command、feedback、復旧状態 |
-| `CanTransport` | `ros2_socketcan` topic、QoS、executor、最新Type 1指令と復帰要求の送信 |
-| `protocol` | RobStride拡張CAN IDとpayloadのencode/decode |
-| `command_mode` | jointごとのposition、velocity、effort claim検証 |
+| `robstride_driver` | protocol、`ros2_socketcan` topic transport、モーター起動・停止、feedback、Run mode復旧 |
+| `robstride_ros2_control` | `hardware_interface::SystemInterface` adapterとplugin登録 |
+| `robstride_examples` | 型番別Xacro、controller設定、example launch |
+| `robstride_ros2` | 従来のlaunch、設定、Xacro、plugin IDを維持する互換entry point |
 
-公開headerはplugin adapterだけです。`RobStrideSystem`は`on_configure`、`on_activate`、`read`、`write`をDriverの`open`、`start`、`update_state`、`send_commands`へ変換します。jointの実行時情報は役割ごとにまとめ、state mutexを保持したままDDS publishは行いません。
+`robstride_driver`は`hardware_interface`へ依存しません。HardwareInfoの解析とcommand mode switchは`robstride_ros2_control`が担当し、`RobStrideSystem`は標準lifecycle callbackをDriver APIへ変換します。
+公開headerは各packageの`include/`、非公開のadapter headerは`robstride_ros2_control/internal/`へ置き、後者はinstallしません。
+plugin、launch、Xacroの識別子は互換です。従来の`<robstride_ros2/robstride_system.hpp>`を直接includeしていた開発コードのみ、`<robstride_ros2_control/robstride_system.hpp>`と`robstride_ros2_control`へのlinkへ移行してください。
 
 
 ## インストール
@@ -22,11 +23,17 @@ RobStride Private Protocol用のROS 2 `ros2_control` Hardware Componentです。
 ```bash
 rosdep update
 rosdep install --from-paths src --ignore-src -r -y
-colcon build --packages-select robstride_ros2 --symlink-install
+colcon build --packages-up-to robstride_ros2 --symlink-install
 source install/setup.bash
 ```
 
 ## 起動
+
+```bash
+ros2 launch robstride_examples robstride_example.launch.py interface:=can0
+```
+
+従来のコマンドも互換パッケージ経由で使用できます。
 
 ```bash
 ros2 launch robstride_ros2 robstride_example.launch.py interface:=can0
@@ -149,14 +156,15 @@ local queue内のlifecycle transactionを送出し、未送信の速度0・Type 
 
 ## 型番別xacro macro
 
-[`description/robstride_motor_profiles.xacro`](description/robstride_motor_profiles.xacro)に定義されています。
+[`robstride_examples/description/robstride_motor_profiles.xacro`](robstride_examples/description/robstride_motor_profiles.xacro)に定義されています。
 
 | 型番 | macro | gear ratio | watchdog ticks |
-|---|---|---:|---:|---|
+|---|---|---:|---:|
 | RS00 | `robstride_rs00_params` | `1.0` | `4000` |
+| RS01 | `robstride_rs01_params` | `1.0` | `4000` |
 | RS02 | `robstride_rs02_params` | `1.0` | `4000` |
-| RS03 | `robstride_rs03_params` | `1.0` | `1200` |
-| RS04 | `robstride_rs04_params` | `1.0` | `2400` |
+| RS03 | `robstride_rs03_params` | `1.0` | `4000` |
+| RS04 | `robstride_rs04_params` | `1.0` | `4000` |
 | RS05 | `robstride_rs05_params` | `1.0` | `4000` |
 | RS06 | `robstride_rs06_params` | `1.0` | `4000` |
 | EduLite05 | `robstride_edulite05_params` | `1.0` | `4000` |
@@ -164,7 +172,7 @@ local queue内のlifecycle transactionを送出し、未送信の速度0・Type 
 使用例：
 
 ```xml
-<xacro:include filename="$(find robstride_ros2)/description/robstride_motor_profiles.xacro"/>
+<xacro:include filename="$(find robstride_examples)/description/robstride_motor_profiles.xacro"/>
 
 <joint name="wheel_joint_1">
   <xacro:robstride_edulite05_params

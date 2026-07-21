@@ -1,6 +1,6 @@
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-Changelog for package robstride_ros2
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Repository changelog for robstride_ros2
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Forthcoming
 -----------
@@ -25,4 +25,6 @@ Forthcoming
   joint runtime state, motor operations, and recovery into internal driver modules.
 * Monitor Type 2 mode while active, retry enable through the transport worker,
   and escalate persistent recovery failures through the hardware ERROR path.
+* Split the repository into driver, ros2_control, examples, and compatibility
+  packages with a one-way dependency graph.
 * Contributors: Yamato.K

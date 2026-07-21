@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>robstride_ros2</name>
+  <version>0.1.0</version>
+  <description>Compatibility entry point for the RobStride ROS 2 packages.</description>
+  <maintainer email="ykturtler@outlook.com">yamato</maintainer>
+  <license>MIT</license>
+  <url type="website">https://github.com/s2015-turtle/robstride_ros2</url>
+  <url type="repository">https://github.com/s2015-turtle/robstride_ros2.git</url>
+  <url type="bugtracker">https://github.com/s2015-turtle/robstride_ros2/issues</url>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>robstride_driver</exec_depend>
+  <exec_depend>robstride_examples</exec_depend>
+  <exec_depend>robstride_ros2_control</exec_depend>
+  <exec_depend>xacro</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
