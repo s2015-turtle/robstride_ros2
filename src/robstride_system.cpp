@@ -2,10 +2,11 @@
 
 #include <algorithm>
 #include <cmath>
-#include <functional>
 #include <limits>
 #include <set>
 #include <stdexcept>
+#include <thread>
+#include <utility>
 
 #include <hardware_interface/types/hardware_interface_type_values.hpp>
 #include <pluginlib/class_list_macros.hpp>
@@ -16,7 +17,8 @@ namespace robstride_ros2
 {
 namespace
 {
-double number(const std::unordered_map<std::string, std::string> & parameters, const char * key)
+double required_number(
+  const std::unordered_map<std::string, std::string> & parameters, const char * key)
 {
   const auto it = parameters.find(key);
   if (it == parameters.end()) {
@@ -25,21 +27,34 @@ double number(const std::unordered_map<std::string, std::string> & parameters, c
   return std::stod(it->second);
 }
 
-std::string hardware_parameter(
+double number_or_parameter(
+  const std::unordered_map<std::string, std::string> & parameters,
+  const char * preferred_key, const char * default_key)
+{
+  return parameters.count(preferred_key) ?
+         required_number(parameters, preferred_key) : required_number(parameters, default_key);
+}
+
+std::string hardware_parameter_or(
   const hardware_interface::HardwareInfo & info, const std::string & key,
-  const std::string & fallback)
+  const std::string & default_value)
 {
   const auto it = info.hardware_parameters.find(key);
-  return it == info.hardware_parameters.end() ? fallback : it->second;
+  return it == info.hardware_parameters.end() ? default_value : it->second;
+}
+
+rclcpp::Logger driver_logger()
+{
+  return rclcpp::get_logger("RobStrideSystem");
 }
 }  // namespace
 
 RobStrideSystem::~RobStrideSystem()
 {
-  if (active_) {
-    try {disable_all();} catch (...) {}
-  }
-  stop_executor();
+  try {
+    if (active_) {disable_all();}
+    stop_transport();
+  } catch (...) {}
 }
 
 bool RobStrideSystem::parse_bool(const std::string & value)
@@ -77,55 +92,87 @@ hardware_interface::CallbackReturn RobStrideSystem::initialize_from_info(
   const hardware_interface::HardwareInfo & info)
 {
   try {
-    const int host = std::stoi(hardware_parameter(info, "host_can_id", "253"), nullptr, 0);
-    if (host < 0 || host > 255) {throw std::runtime_error("host_can_id must be 0..255");}
-    host_id_ = static_cast<uint8_t>(host);
-    tx_topic_ = hardware_parameter(info, "can_tx_topic", "to_can_bus");
-    rx_topic_ = hardware_parameter(info, "can_rx_topic", "from_can_bus");
-    qos_depth_ = static_cast<size_t>(std::stoul(hardware_parameter(info, "can_qos_depth", "500")));
-    feedback_timeout_ms_ = std::stoi(hardware_parameter(info, "feedback_timeout_ms", "3000"));
-    fail_on_feedback_timeout_ = parse_bool(
-      hardware_parameter(info, "fail_on_feedback_timeout", "true"));
-    clear_faults_on_activate_ = parse_bool(
-      hardware_parameter(info, "clear_faults_on_activate", "true"));
-    set_zero_on_activate_ = parse_bool(
-      hardware_parameter(info, "set_zero_on_activate", "false"));
-    shutdown_stop_repetitions_ = std::stoi(
-      hardware_parameter(info, "shutdown_stop_repetitions", "3"));
-    shutdown_stop_interval_ms_ = std::stoi(
-      hardware_parameter(info, "shutdown_stop_interval_ms", "20"));
-    shutdown_confirmation_timeout_ms_ = std::stoi(
-      hardware_parameter(info, "shutdown_confirmation_timeout_ms", "300"));
-    startup_connection_timeout_ms_ = std::stoi(
-      hardware_parameter(info, "startup_connection_timeout_ms", "3000"));
-    startup_confirmation_timeout_ms_ = std::stoi(
-      hardware_parameter(info, "startup_confirmation_timeout_ms", "500"));
-    startup_retries_ = std::stoi(hardware_parameter(info, "startup_retries", "3"));
-    if (qos_depth_ == 0 || feedback_timeout_ms_ <= 0) {
-      throw std::runtime_error("can_qos_depth and feedback_timeout_ms must be positive");
+    const int host_can_id =
+      std::stoi(hardware_parameter_or(info, "host_can_id", "253"), nullptr, 0);
+    if (host_can_id < 0 || host_can_id > 255) {
+      throw std::runtime_error("host_can_id must be 0..255");
     }
-    if (shutdown_stop_repetitions_ <= 0 || shutdown_stop_interval_ms_ < 0 ||
-      shutdown_confirmation_timeout_ms_ < 0 || startup_connection_timeout_ms_ <= 0 ||
-      startup_confirmation_timeout_ms_ <= 0 || startup_retries_ <= 0)
+    settings_.host_id = static_cast<uint8_t>(host_can_id);
+    settings_.transport.node_name = info.name + "_can_transport";
+    settings_.transport.transmit_topic =
+      hardware_parameter_or(info, "can_tx_topic", "to_can_bus");
+    settings_.transport.receive_topic =
+      hardware_parameter_or(info, "can_rx_topic", "from_can_bus");
+
+    settings_.transport.receive_qos_depth = static_cast<size_t>(std::stoul(hardware_parameter_or(
+          info, "can_rx_qos_depth", "32")));
+    settings_.transport.motion_frame_lifespan = std::chrono::milliseconds(std::stoi(
+          hardware_parameter_or(info, "motion_command_lifespan_ms", "50")));
+
+    settings_.feedback_timeout = std::chrono::milliseconds(std::stoi(
+          hardware_parameter_or(info, "feedback_timeout_ms", "3000")));
+    settings_.fail_on_feedback_timeout = parse_bool(
+      hardware_parameter_or(info, "fail_on_feedback_timeout", "true"));
+    settings_.run_mode_recovery_timeout = std::chrono::milliseconds(std::stoi(
+          hardware_parameter_or(info, "run_mode_recovery_timeout_ms", "500")));
+    settings_.run_mode_recovery_retry_interval = std::chrono::milliseconds(std::stoi(
+          hardware_parameter_or(info, "run_mode_recovery_retry_interval_ms", "100")));
+    settings_.clear_faults_on_activate = parse_bool(
+      hardware_parameter_or(info, "clear_faults_on_activate", "true"));
+    settings_.set_zero_on_activate = parse_bool(
+      hardware_parameter_or(info, "set_zero_on_activate", "false"));
+    settings_.shutdown_stop_repetitions = std::stoi(
+      hardware_parameter_or(info, "shutdown_stop_repetitions", "3"));
+    settings_.shutdown_stop_interval = std::chrono::milliseconds(std::stoi(
+          hardware_parameter_or(info, "shutdown_stop_interval_ms", "20")));
+    settings_.shutdown_confirmation_timeout = std::chrono::milliseconds(std::stoi(
+          hardware_parameter_or(info, "shutdown_confirmation_timeout_ms", "300")));
+    settings_.startup_connection_timeout = std::chrono::milliseconds(std::stoi(
+          hardware_parameter_or(info, "startup_connection_timeout_ms", "3000")));
+    settings_.startup_confirmation_timeout = std::chrono::milliseconds(std::stoi(
+          hardware_parameter_or(info, "startup_confirmation_timeout_ms", "500")));
+    settings_.startup_retries =
+      std::stoi(hardware_parameter_or(info, "startup_retries", "3"));
+
+    if (settings_.transport.receive_qos_depth == 0 ||
+      settings_.transport.motion_frame_lifespan.count() <= 0 ||
+      settings_.feedback_timeout.count() <= 0 ||
+      settings_.run_mode_recovery_timeout.count() <= 0 ||
+      settings_.run_mode_recovery_retry_interval.count() <= 0 ||
+      settings_.run_mode_recovery_retry_interval > settings_.run_mode_recovery_timeout)
+    {
+      throw std::runtime_error(
+              "CAN QoS depths, command lifespan, feedback timeout, and Run-mode recovery "
+              "timings must be positive; recovery retry interval must not exceed its timeout");
+    }
+    if (settings_.shutdown_stop_repetitions <= 0 ||
+      settings_.shutdown_stop_interval.count() < 0 ||
+      settings_.shutdown_confirmation_timeout.count() < 0 ||
+      settings_.startup_connection_timeout.count() <= 0 ||
+      settings_.startup_confirmation_timeout.count() <= 0 || settings_.startup_retries <= 0)
     {
       throw std::runtime_error("invalid startup or shutdown timing parameters");
     }
 
     joints_.clear();
     can_id_to_joint_.clear();
-    std::set<uint8_t> ids;
+    if (info.joints.empty()) {throw std::runtime_error("at least one joint is required");}
+    std::set<uint8_t> configured_can_ids;
     joints_.reserve(info.joints.size());
     for (const auto & joint_info : info.joints) {
       Joint joint;
       if (!parse_joint(joint_info, joint)) {return hardware_interface::CallbackReturn::ERROR;}
-      if (!ids.insert(joint.can_id).second) {
+      if (!configured_can_ids.insert(joint.can_id).second) {
         throw std::runtime_error("duplicate can_id " + std::to_string(joint.can_id));
       }
       can_id_to_joint_[joint.can_id] = joints_.size();
       joints_.push_back(joint);
     }
+    settings_.transport.motor_count = joints_.size();
+    runtime_events_.clear();
+    runtime_events_.reserve(joints_.size());
   } catch (const std::exception & error) {
-    RCLCPP_ERROR(rclcpp::get_logger("RobStrideSystem"), "Invalid hardware configuration: %s", error.what());
+    RCLCPP_ERROR(driver_logger(), "Invalid hardware configuration: %s", error.what());
     return hardware_interface::CallbackReturn::ERROR;
   }
   return hardware_interface::CallbackReturn::SUCCESS;
@@ -135,33 +182,42 @@ bool RobStrideSystem::parse_joint(const hardware_interface::ComponentInfo & info
 {
   try {
     joint.name = info.name;
-    const double unknown = std::numeric_limits<double>::quiet_NaN();
-    joint.state = StateValues{unknown, unknown, unknown, unknown, 0.0};
-    joint.received = joint.state;
-    joint.command_position = std::numeric_limits<double>::quiet_NaN();
-    const int id = std::stoi(info.parameters.at("can_id"), nullptr, 0);
-    if (id < 1 || id > 255) {throw std::runtime_error("can_id must be 1..255");}
-    joint.can_id = static_cast<uint8_t>(id);
+    const double unknown_state_value = std::numeric_limits<double>::quiet_NaN();
+    joint.state = StateValues{
+      unknown_state_value, unknown_state_value, unknown_state_value, unknown_state_value, 0.0};
+    joint.feedback = joint.state;
+    joint.command.position = std::numeric_limits<double>::quiet_NaN();
+    const int motor_can_id = std::stoi(info.parameters.at("can_id"), nullptr, 0);
+    if (motor_can_id < 1 || motor_can_id > 255) {
+      throw std::runtime_error("can_id must be 1..255");
+    }
+    joint.can_id = static_cast<uint8_t>(motor_can_id);
     joint.limits = Limits{
-      number(info.parameters, "position_min"), number(info.parameters, "position_max"),
-      number(info.parameters, "velocity_min"), number(info.parameters, "velocity_max"),
-      number(info.parameters, "effort_min"), number(info.parameters, "effort_max"),
-      info.parameters.count("effort_wire_min") ? number(info.parameters, "effort_wire_min") : number(info.parameters, "effort_min"),
-      info.parameters.count("effort_wire_max") ? number(info.parameters, "effort_wire_max") : number(info.parameters, "effort_max"),
-      number(info.parameters, "kp_max"), number(info.parameters, "kd_max")};
-    joint.kp = number(info.parameters, "kp");
-    joint.kd = number(info.parameters, "kd");
+      required_number(info.parameters, "position_min"),
+      required_number(info.parameters, "position_max"),
+      required_number(info.parameters, "velocity_min"),
+      required_number(info.parameters, "velocity_max"),
+      required_number(info.parameters, "effort_min"),
+      required_number(info.parameters, "effort_max"),
+      number_or_parameter(info.parameters, "effort_wire_min", "effort_min"),
+      number_or_parameter(info.parameters, "effort_wire_max", "effort_max"),
+      required_number(info.parameters, "kp_max"), required_number(info.parameters, "kd_max")};
+    joint.kp = required_number(info.parameters, "kp");
+    joint.kd = required_number(info.parameters, "kd");
     joint.can_timeout_ticks = static_cast<uint32_t>(
       std::stoul(info.parameters.at("can_timeout_ticks"), nullptr, 0));
     if (joint.can_timeout_ticks == 0) {
       throw std::runtime_error("can_timeout_ticks must be nonzero for fail-safe shutdown");
     }
-    const auto direction = info.parameters.find("direction");
-    joint.direction = direction == info.parameters.end() ? 1.0 : std::stod(direction->second);
-    const auto gear = info.parameters.find("gear_ratio");
-    joint.gear_ratio = gear == info.parameters.end() ? 1.0 : std::stod(gear->second);
-    const auto offset = info.parameters.find("position_offset");
-    joint.position_offset = offset == info.parameters.end() ? 0.0 : std::stod(offset->second);
+    const auto direction_parameter = info.parameters.find("direction");
+    joint.direction = direction_parameter == info.parameters.end() ?
+      1.0 : std::stod(direction_parameter->second);
+    const auto gear_ratio_parameter = info.parameters.find("gear_ratio");
+    joint.gear_ratio = gear_ratio_parameter == info.parameters.end() ?
+      1.0 : std::stod(gear_ratio_parameter->second);
+    const auto position_offset_parameter = info.parameters.find("position_offset");
+    joint.position_offset = position_offset_parameter == info.parameters.end() ?
+      0.0 : std::stod(position_offset_parameter->second);
     if (joint.direction != 1.0 && joint.direction != -1.0) {
       throw std::runtime_error("direction must be 1 or -1");
     }
@@ -203,7 +259,7 @@ bool RobStrideSystem::parse_joint(const hardware_interface::ComponentInfo & info
     }
   } catch (const std::exception & error) {
     RCLCPP_ERROR(
-      rclcpp::get_logger("RobStrideSystem"), "Joint '%s': %s", info.name.c_str(), error.what());
+      driver_logger(), "Joint '%s': %s", info.name.c_str(), error.what());
     return false;
   }
   return true;
@@ -232,9 +288,11 @@ std::vector<hardware_interface::CommandInterface> RobStrideSystem::export_comman
 {
   std::vector<hardware_interface::CommandInterface> interfaces;
   for (auto & joint : joints_) {
-    interfaces.emplace_back(joint.name, hardware_interface::HW_IF_POSITION, &joint.command_position);
-    interfaces.emplace_back(joint.name, hardware_interface::HW_IF_VELOCITY, &joint.command_velocity);
-    interfaces.emplace_back(joint.name, hardware_interface::HW_IF_EFFORT, &joint.command_effort);
+    interfaces.emplace_back(
+      joint.name, hardware_interface::HW_IF_POSITION, &joint.command.position);
+    interfaces.emplace_back(
+      joint.name, hardware_interface::HW_IF_VELOCITY, &joint.command.velocity);
+    interfaces.emplace_back(joint.name, hardware_interface::HW_IF_EFFORT, &joint.command.effort);
   }
   return interfaces;
 }
@@ -242,18 +300,13 @@ std::vector<hardware_interface::CommandInterface> RobStrideSystem::export_comman
 hardware_interface::CallbackReturn RobStrideSystem::on_configure(const rclcpp_lifecycle::State &)
 {
   try {
-    node_ = std::make_shared<rclcpp::Node>(info_.name + "_can_transport");
-    const auto qos = rclcpp::QoS(rclcpp::KeepLast(qos_depth_)).reliable().durability_volatile();
-    publisher_ = node_->create_publisher<can_msgs::msg::Frame>(tx_topic_, qos);
-    subscription_ = node_->create_subscription<can_msgs::msg::Frame>(
-      rx_topic_, qos, std::bind(&RobStrideSystem::receive_frame, this, std::placeholders::_1));
-    executor_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
-    executor_->add_node(node_);
-    spinning_ = true;
-    executor_thread_ = std::thread([this]() {executor_->spin();});
+    transport_ = std::make_unique<CanTransport>(
+      settings_.transport,
+      [this](can_msgs::msg::Frame::ConstSharedPtr frame) {receive_frame(std::move(frame));});
+    transport_->start();
   } catch (const std::exception & error) {
-    RCLCPP_ERROR(rclcpp::get_logger("RobStrideSystem"), "CAN topic setup failed: %s", error.what());
-    stop_executor();
+    RCLCPP_ERROR(driver_logger(), "CAN topic setup failed: %s", error.what());
+    stop_transport();
     return hardware_interface::CallbackReturn::ERROR;
   }
   return hardware_interface::CallbackReturn::SUCCESS;
@@ -261,25 +314,33 @@ hardware_interface::CallbackReturn RobStrideSystem::on_configure(const rclcpp_li
 
 hardware_interface::CallbackReturn RobStrideSystem::on_cleanup(const rclcpp_lifecycle::State &)
 {
-  stop_executor();
+  stop_transport();
   return hardware_interface::CallbackReturn::SUCCESS;
 }
 
 hardware_interface::CallbackReturn RobStrideSystem::on_activate(const rclcpp_lifecycle::State &)
 {
-  if (!wait_for_transport()) {
+  if (!transport_ || !transport_->wait_for_endpoints(settings_.startup_connection_timeout)) {
+    RCLCPP_ERROR(
+      driver_logger(),
+      "Timed out waiting for ros2_socketcan endpoints on '%s' and '%s'",
+      settings_.transport.transmit_topic.c_str(), settings_.transport.receive_topic.c_str());
     return hardware_interface::CallbackReturn::ERROR;
   }
 
   for (auto & joint : joints_) {
-    if (clear_faults_on_activate_) {publish(make_stop(joint.can_id, host_id_, true));}
+    if (settings_.clear_faults_on_activate) {
+      transport_->send_transaction(make_stop(joint.can_id, settings_.host_id, true));
+    }
     if (!write_and_confirm_parameter(joint, kIndexCanTimeout, joint.can_timeout_ticks) ||
       !write_and_confirm_parameter(joint, kIndexRunMode, 0))
     {
       disable_all();
       return hardware_interface::CallbackReturn::ERROR;
     }
-    if (set_zero_on_activate_) {publish(make_set_zero(joint.can_id, host_id_));}
+    if (settings_.set_zero_on_activate) {
+      transport_->send_transaction(make_set_zero(joint.can_id, settings_.host_id));
+    }
   }
 
   if (!enable_and_confirm_all()) {
@@ -287,13 +348,16 @@ hardware_interface::CallbackReturn RobStrideSystem::on_activate(const rclcpp_lif
     return hardware_interface::CallbackReturn::ERROR;
   }
   {
-    // Controllers read the exported state variables without this transport mutex.
+    // Controllers read exported state variables without holding state_mutex_.
     // Seed them before activation, then update them only from read().
-    std::lock_guard<std::mutex> lock(mutex_);
-    for (auto & joint : joints_) {
-      joint.state = joint.received;
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    for (size_t joint_index = 0; joint_index < joints_.size(); ++joint_index) {
+      auto & joint = joints_[joint_index];
+      joint.state = joint.feedback;
+      joint.run_mode_recovery = RunModeRecoveryState{};
     }
   }
+  transport_->enable_active_commands();
   activated_at_ = std::chrono::steady_clock::now();
   active_ = true;
   return hardware_interface::CallbackReturn::SUCCESS;
@@ -308,14 +372,14 @@ hardware_interface::CallbackReturn RobStrideSystem::on_deactivate(const rclcpp_l
 hardware_interface::CallbackReturn RobStrideSystem::on_shutdown(const rclcpp_lifecycle::State &)
 {
   disable_all();
-  stop_executor();
+  stop_transport();
   return hardware_interface::CallbackReturn::SUCCESS;
 }
 
 hardware_interface::CallbackReturn RobStrideSystem::on_error(const rclcpp_lifecycle::State &)
 {
   disable_all();
-  stop_executor();
+  stop_transport();
   return hardware_interface::CallbackReturn::SUCCESS;
 }
 
@@ -323,40 +387,103 @@ hardware_interface::return_type RobStrideSystem::read(const rclcpp::Time &, cons
 {
   if (!active_) {return hardware_interface::return_type::OK;}
   const auto now = std::chrono::steady_clock::now();
-  const auto timeout = std::chrono::milliseconds(feedback_timeout_ms_);
-  std::lock_guard<std::mutex> lock(mutex_);
-  for (auto & joint : joints_) {
-    if (joint.feedback_received) {
-      joint.state = joint.received;
-    }
-    if (!fail_on_feedback_timeout_) {continue;}
-    const auto reference = joint.feedback_received ? joint.last_feedback : activated_at_;
-    if (now - reference > timeout) {
-      RCLCPP_ERROR_THROTTLE(
-        node_->get_logger(), *node_->get_clock(), 1000, "Feedback timeout for joint '%s'",
-        joint.name.c_str());
-      return hardware_interface::return_type::ERROR;
+  bool read_failed = false;
+  runtime_events_.clear();
+  {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    for (size_t joint_index = 0; joint_index < joints_.size(); ++joint_index) {
+      auto & joint = joints_[joint_index];
+      if (joint.feedback_status.received) {
+        joint.state = joint.feedback;
+      }
+
+      if (settings_.fail_on_feedback_timeout) {
+        const auto reference =
+          joint.feedback_status.received ? joint.feedback_status.timestamp : activated_at_;
+        if (now - reference > settings_.feedback_timeout) {
+          runtime_events_.push_back(
+            RuntimeEvent{RuntimeEventKind::feedback_timeout, joint_index});
+          read_failed = true;
+          break;
+        }
+      }
+
+      if (!joint.feedback_status.received) {continue;}
+      auto & recovery = joint.run_mode_recovery;
+      const int attempts_before_update = recovery.attempts;
+      const auto recovery_action = update_run_mode_recovery(
+        recovery, joint.feedback_status.mode, now, settings_.run_mode_recovery_timeout,
+        settings_.run_mode_recovery_retry_interval);
+      if (recovery_action == RunModeRecoveryAction::recovered) {
+        runtime_events_.push_back(
+          RuntimeEvent{
+            RuntimeEventKind::recovered, joint_index, kMotorModeRun, attempts_before_update});
+      } else if (recovery_action == RunModeRecoveryAction::failed) {
+        runtime_events_.push_back(
+          RuntimeEvent{
+            RuntimeEventKind::recovery_failed, joint_index, recovery.detected_mode,
+            recovery.attempts});
+        read_failed = true;
+        break;
+      } else if (recovery_action == RunModeRecoveryAction::send_enable) {
+        if (recovery.attempts == 1) {
+          runtime_events_.push_back(
+            RuntimeEvent{
+              RuntimeEventKind::recovery_started, joint_index, recovery.detected_mode,
+              recovery.attempts});
+        }
+        transport_->queue_recovery_frame(
+          joint_index, make_enable(joint.can_id, settings_.host_id));
+      }
     }
   }
+
+  for (const auto & event : runtime_events_) {
+    const auto & joint = joints_[event.joint_index];
+    if (event.kind == RuntimeEventKind::feedback_timeout) {
+      RCLCPP_ERROR_THROTTLE(
+        driver_logger(), *log_clock_, 1000, "Feedback timeout for joint '%s'",
+        joint.name.c_str());
+    } else if (event.kind == RuntimeEventKind::recovery_started) {
+      RCLCPP_WARN(
+        driver_logger(),
+        "Joint '%s' left Run mode while hardware is active (mode=%u); attempting recovery",
+        joint.name.c_str(), static_cast<unsigned int>(event.mode));
+    } else if (event.kind == RuntimeEventKind::recovered) {
+      RCLCPP_INFO(
+        driver_logger(), "Joint '%s' recovered to Run mode after %d enable attempt(s)",
+        joint.name.c_str(), event.attempts);
+    } else if (event.kind == RuntimeEventKind::recovery_failed) {
+      RCLCPP_ERROR(
+        driver_logger(),
+        "Joint '%s' did not return to Run mode within %lld ms after %d enable attempt(s)",
+        joint.name.c_str(),
+        static_cast<long long>(settings_.run_mode_recovery_timeout.count()), event.attempts);
+    }
+  }
+  if (read_failed) {return hardware_interface::return_type::ERROR;}
   return hardware_interface::return_type::OK;
 }
 
 hardware_interface::return_type RobStrideSystem::write(const rclcpp::Time &, const rclcpp::Duration &)
 {
   if (!active_) {return hardware_interface::return_type::OK;}
-  std::lock_guard<std::mutex> lock(mutex_);
-  for (const auto & joint : joints_) {
-    const double joint_position = joint.position_active && std::isfinite(joint.command_position) ?
-      joint.command_position : joint.state.position;
+  std::lock_guard<std::mutex> lock(state_mutex_);
+  if (!active_) {return hardware_interface::return_type::OK;}
+  for (size_t joint_index = 0; joint_index < joints_.size(); ++joint_index) {
+    const auto & joint = joints_[joint_index];
+    const double joint_position = joint.claimed.position && std::isfinite(joint.command.position) ?
+      joint.command.position : joint.state.position;
     const double motor_position = std::isfinite(joint_position) ?
       joint.direction * (joint_position - joint.position_offset) * joint.gear_ratio : 0.0;
-    const double motor_velocity = joint.velocity_active && std::isfinite(joint.command_velocity) ?
-      joint.direction * joint.command_velocity * joint.gear_ratio : 0.0;
-    const double motor_effort = joint.effort_active && std::isfinite(joint.command_effort) ?
-      joint.direction * joint.command_effort : 0.0;
-    const double kp = joint.position_active ? joint.kp : 0.0;
-    const double kd = (joint.position_active || joint.velocity_active) ? joint.kd : 0.0;
-    publish(make_motion_command(
+    const double motor_velocity = joint.claimed.velocity && std::isfinite(joint.command.velocity) ?
+      joint.direction * joint.command.velocity * joint.gear_ratio : 0.0;
+    const double motor_effort = joint.claimed.effort && std::isfinite(joint.command.effort) ?
+      joint.direction * joint.command.effort : 0.0;
+    const double kp = joint.claimed.position ? joint.kp : 0.0;
+    const double kd = (joint.claimed.position || joint.claimed.velocity) ? joint.kd : 0.0;
+    transport_->queue_motion_frame(
+      joint_index, make_motion_command(
         joint.can_id, joint.limits, motor_position, motor_velocity, motor_effort, kp, kd));
   }
   return hardware_interface::return_type::OK;
@@ -365,27 +492,27 @@ hardware_interface::return_type RobStrideSystem::write(const rclcpp::Time &, con
 hardware_interface::return_type RobStrideSystem::prepare_command_mode_switch(
   const std::vector<std::string> & start, const std::vector<std::string> & stop)
 {
-  std::lock_guard<std::mutex> lock(mutex_);
+  std::lock_guard<std::mutex> lock(state_mutex_);
   std::vector<CommandModeState> current_states;
   current_states.reserve(joints_.size());
   for (const auto & joint : joints_) {
     current_states.push_back(CommandModeState{
-      joint.name, joint.position_active, joint.velocity_active, joint.effort_active});
+      joint.name, joint.claimed.position, joint.claimed.velocity, joint.claimed.effort});
   }
 
   std::string validation_error;
   if (!validate_command_mode_switch(current_states, start, stop, &validation_error)) {
     RCLCPP_ERROR(
-      rclcpp::get_logger("RobStrideSystem"), "Command mode switch rejected: %s",
+      driver_logger(), "Command mode switch rejected: %s",
       validation_error.c_str());
     return hardware_interface::return_type::ERROR;
   }
 
   for (const auto & key : start) {
     for (const auto & joint : joints_) {
-      if (key == joint.name + "/position" && !joint.feedback_received) {
+      if (key == joint.name + "/position" && !joint.feedback_status.received) {
         RCLCPP_ERROR(
-          rclcpp::get_logger("RobStrideSystem"),
+          driver_logger(),
           "Cannot start position command interface for '%s' before first feedback",
           joint.name.c_str());
         return hardware_interface::return_type::ERROR;
@@ -398,206 +525,176 @@ hardware_interface::return_type RobStrideSystem::prepare_command_mode_switch(
 hardware_interface::return_type RobStrideSystem::perform_command_mode_switch(
   const std::vector<std::string> & start, const std::vector<std::string> & stop)
 {
-  std::lock_guard<std::mutex> lock(mutex_);
-  const auto set_active = [this](const std::string & key, bool value) {
+  std::lock_guard<std::mutex> lock(state_mutex_);
+  const auto set_claimed = [this](const std::string & key, bool value) {
       for (auto & joint : joints_) {
         if (key == joint.name + "/position") {
-          joint.position_active = value;
-          if (value) {joint.command_position = joint.state.position;}
+          joint.claimed.position = value;
+          if (value) {joint.command.position = joint.state.position;}
         } else if (key == joint.name + "/velocity") {
-          joint.velocity_active = value;
-          if (value) {joint.command_velocity = 0.0;}
+          joint.claimed.velocity = value;
+          if (value) {joint.command.velocity = 0.0;}
         } else if (key == joint.name + "/effort") {
-          joint.effort_active = value;
-          if (value) {joint.command_effort = 0.0;}
+          joint.claimed.effort = value;
+          if (value) {joint.command.effort = 0.0;}
         }
       }
     };
-  for (const auto & key : stop) {set_active(key, false);}
-  for (const auto & key : start) {set_active(key, true);}
+  for (const auto & key : stop) {set_claimed(key, false);}
+  for (const auto & key : start) {set_claimed(key, true);}
   return hardware_interface::return_type::OK;
 }
 
 void RobStrideSystem::receive_frame(const can_msgs::msg::Frame::ConstSharedPtr msg)
 {
   if (msg->is_error || msg->is_rtr) {return;}
-  const uint16_t area = static_cast<uint16_t>((msg->id >> 8) & 0xffff);
-  const uint8_t motor_id = static_cast<uint8_t>(area & 0xff);
-  const auto found = can_id_to_joint_.find(motor_id);
-  if (found == can_id_to_joint_.end()) {return;}
+  const uint16_t data_area = static_cast<uint16_t>((msg->id >> 8) & 0xffff);
+  const uint8_t motor_id = static_cast<uint8_t>(data_area & 0xff);
+  const auto joint_entry = can_id_to_joint_.find(motor_id);
+  if (joint_entry == can_id_to_joint_.end()) {return;}
 
   const auto parameter = decode_parameter_response(
-    msg->id, msg->data, msg->dlc, msg->is_extended, host_id_);
+    msg->id, msg->data, msg->dlc, msg->is_extended, settings_.host_id);
   if (parameter) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto & joint = joints_[found->second];
-    joint.parameter_received = true;
-    joint.last_parameter_index = parameter->index;
-    joint.last_parameter_value = parameter->value;
-    joint.last_parameter_response = std::chrono::steady_clock::now();
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    auto & joint = joints_[joint_entry->second];
+    joint.parameter_status.received = true;
+    joint.parameter_status.index = parameter->index;
+    joint.parameter_status.value = parameter->value;
+    joint.parameter_status.timestamp = std::chrono::steady_clock::now();
     feedback_condition_.notify_all();
     return;
   }
 
   const auto decoded = decode_feedback(
-    msg->id, msg->data, msg->dlc, msg->is_extended, host_id_, joints_[found->second].limits);
+    msg->id, msg->data, msg->dlc, msg->is_extended, settings_.host_id,
+    joints_[joint_entry->second].limits);
   if (!decoded) {return;}
-  std::lock_guard<std::mutex> lock(mutex_);
-  auto & joint = joints_[found->second];
-  joint.received.position =
+  std::lock_guard<std::mutex> lock(state_mutex_);
+  auto & joint = joints_[joint_entry->second];
+  joint.feedback.position =
     joint.direction * (decoded->position / joint.gear_ratio) + joint.position_offset;
-  joint.received.velocity = joint.direction * (decoded->velocity / joint.gear_ratio);
-  joint.received.effort = joint.direction * decoded->effort;
-  joint.received.temperature = decoded->temperature;
-  joint.received.fault = decoded->fault_flags;
-  joint.feedback_mode = decoded->mode;
-  joint.feedback_received = true;
-  joint.last_feedback = std::chrono::steady_clock::now();
+  joint.feedback.velocity = joint.direction * (decoded->velocity / joint.gear_ratio);
+  joint.feedback.effort = joint.direction * decoded->effort;
+  joint.feedback.temperature = decoded->temperature;
+  joint.feedback.fault = decoded->fault_flags;
+  joint.feedback_status.mode = decoded->mode;
+  joint.feedback_status.received = true;
+  joint.feedback_status.timestamp = std::chrono::steady_clock::now();
   feedback_condition_.notify_all();
-}
-
-void RobStrideSystem::publish(const Frame & source)
-{
-  if (!publisher_) {return;}
-  can_msgs::msg::Frame message;
-  message.header.stamp = node_->now();
-  message.id = source.id;
-  message.is_rtr = false;
-  message.is_extended = true;
-  message.is_error = false;
-  message.dlc = 8;
-  message.data = source.data;
-  publisher_->publish(message);
-}
-
-bool RobStrideSystem::wait_for_transport()
-{
-  const auto deadline = std::chrono::steady_clock::now() +
-    std::chrono::milliseconds(startup_connection_timeout_ms_);
-  while (std::chrono::steady_clock::now() < deadline) {
-    if (publisher_ && subscription_ && publisher_->get_subscription_count() > 0 &&
-      subscription_->get_publisher_count() > 0)
-    {
-      return true;
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
-  }
-  RCLCPP_ERROR(
-    node_->get_logger(),
-    "Timed out waiting for ros2_socketcan publishers/subscribers on '%s' and '%s'",
-    tx_topic_.c_str(), rx_topic_.c_str());
-  return false;
 }
 
 bool RobStrideSystem::write_and_confirm_parameter(
   Joint & joint, uint16_t index, uint32_t value)
 {
-  for (int attempt = 1; attempt <= startup_retries_; ++attempt) {
+  for (int attempt = 1; attempt <= settings_.startup_retries; ++attempt) {
     const auto requested_at = std::chrono::steady_clock::now();
     if (index == kIndexRunMode) {
-      publish(make_write_u8(joint.can_id, host_id_, index, static_cast<uint8_t>(value)));
+      transport_->send_transaction(
+        make_write_u8(joint.can_id, settings_.host_id, index, static_cast<uint8_t>(value)));
     } else {
-      publish(make_write_u32(joint.can_id, host_id_, index, value));
+      transport_->send_transaction(
+        make_write_u32(joint.can_id, settings_.host_id, index, value));
     }
-    publish(make_read_parameter(joint.can_id, host_id_, index));
+    transport_->send_transaction(
+      make_read_parameter(joint.can_id, settings_.host_id, index));
 
-    std::unique_lock<std::mutex> lock(mutex_);
+    std::unique_lock<std::mutex> lock(state_mutex_);
     const bool confirmed = feedback_condition_.wait_for(
-      lock, std::chrono::milliseconds(startup_confirmation_timeout_ms_),
+      lock, settings_.startup_confirmation_timeout,
       [&joint, index, value, requested_at]() {
-        return joint.parameter_received && joint.last_parameter_response >= requested_at &&
-               joint.last_parameter_index == index && joint.last_parameter_value == value;
+        return joint.parameter_status.received &&
+               joint.parameter_status.timestamp >= requested_at &&
+               joint.parameter_status.index == index && joint.parameter_status.value == value;
       });
     if (confirmed) {return true;}
     RCLCPP_WARN(
-      node_->get_logger(),
+      driver_logger(),
       "Joint '%s': parameter 0x%04X confirmation attempt %d/%d failed",
-      joint.name.c_str(), index, attempt, startup_retries_);
+      joint.name.c_str(), index, attempt, settings_.startup_retries);
   }
   RCLCPP_ERROR(
-    node_->get_logger(), "Joint '%s': parameter 0x%04X could not be confirmed",
+    driver_logger(), "Joint '%s': parameter 0x%04X could not be confirmed",
     joint.name.c_str(), index);
   return false;
 }
 
 bool RobStrideSystem::enable_and_confirm_all()
 {
-  for (int attempt = 1; attempt <= startup_retries_; ++attempt) {
+  for (int attempt = 1; attempt <= settings_.startup_retries; ++attempt) {
     const auto requested_at = std::chrono::steady_clock::now();
     for (const auto & joint : joints_) {
-      publish(make_enable(joint.can_id, host_id_));
-      publish(make_motion_command(
+      transport_->send_transaction(make_enable(joint.can_id, settings_.host_id));
+      transport_->send_transaction(make_motion_command(
           joint.can_id, joint.limits, 0.0, 0.0, 0.0, 0.0, 0.0));
     }
 
-    std::unique_lock<std::mutex> lock(mutex_);
+    std::unique_lock<std::mutex> lock(state_mutex_);
     const bool confirmed = feedback_condition_.wait_for(
-      lock, std::chrono::milliseconds(startup_confirmation_timeout_ms_),
+      lock, settings_.startup_confirmation_timeout,
       [this, requested_at]() {
         return std::all_of(joints_.begin(), joints_.end(), [requested_at](const Joint & joint) {
-          return joint.feedback_received && joint.last_feedback >= requested_at &&
-                 joint.feedback_mode == 2;
+          return joint.feedback_status.received &&
+                 joint.feedback_status.timestamp >= requested_at &&
+                 joint.feedback_status.mode == kMotorModeRun;
         });
       });
     if (confirmed) {return true;}
     RCLCPP_WARN(
-      node_->get_logger(), "Motor enable confirmation attempt %d/%d failed",
-      attempt, startup_retries_);
+      driver_logger(), "Motor enable confirmation attempt %d/%d failed",
+      attempt, settings_.startup_retries);
   }
-  RCLCPP_ERROR(node_->get_logger(), "Not all motors entered Run mode");
+  RCLCPP_ERROR(driver_logger(), "Not all motors entered Run mode");
   return false;
 }
 
 void RobStrideSystem::disable_all()
 {
-  if (!publisher_) {
+  if (!transport_) {
     active_ = false;
     return;
   }
   active_ = false;
+  transport_->disable_active_commands();
   const auto stop_started = std::chrono::steady_clock::now();
-  for (int attempt = 0; attempt < shutdown_stop_repetitions_; ++attempt) {
+  for (int attempt = 0; attempt < settings_.shutdown_stop_repetitions; ++attempt) {
     for (const auto & joint : joints_) {
-      publish(make_motion_command(joint.can_id, joint.limits, 0.0, 0.0, 0.0, 0.0, 0.0));
-      publish(make_stop(joint.can_id, host_id_));
+      transport_->send_transaction(
+        make_motion_command(joint.can_id, joint.limits, 0.0, 0.0, 0.0, 0.0, 0.0));
+      transport_->send_transaction(make_stop(joint.can_id, settings_.host_id));
     }
-    if (publisher_->get_subscription_count() > 0) {
-      (void)publisher_->wait_for_all_acked(std::chrono::milliseconds(50));
-    }
-    if (attempt + 1 < shutdown_stop_repetitions_ && shutdown_stop_interval_ms_ > 0) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(shutdown_stop_interval_ms_));
+    (void)transport_->wait_for_transaction_acknowledgements(std::chrono::milliseconds(50));
+    if (attempt + 1 < settings_.shutdown_stop_repetitions &&
+      settings_.shutdown_stop_interval.count() > 0)
+    {
+      std::this_thread::sleep_for(settings_.shutdown_stop_interval);
     }
   }
 
-  if (shutdown_confirmation_timeout_ms_ > 0) {
-    std::unique_lock<std::mutex> lock(mutex_);
+  if (settings_.shutdown_confirmation_timeout.count() > 0) {
+    std::unique_lock<std::mutex> lock(state_mutex_);
     const bool confirmed = feedback_condition_.wait_for(
-      lock, std::chrono::milliseconds(shutdown_confirmation_timeout_ms_),
+      lock, settings_.shutdown_confirmation_timeout,
       [this, stop_started]() {
         return std::all_of(joints_.begin(), joints_.end(), [stop_started](const Joint & joint) {
-          return joint.feedback_received && joint.last_feedback >= stop_started &&
-                 joint.feedback_mode == 0;
+          return joint.feedback_status.received &&
+                 joint.feedback_status.timestamp >= stop_started &&
+                 joint.feedback_status.mode == kMotorModeReset;
         });
       });
     if (!confirmed) {
       RCLCPP_ERROR(
-        node_->get_logger(),
+        driver_logger(),
         "Motor stop was not confirmed on CAN; motor watchdog must force reset after timeout");
     }
   }
 }
 
-void RobStrideSystem::stop_executor()
+void RobStrideSystem::stop_transport()
 {
   active_ = false;
-  if (executor_) {executor_->cancel();}
-  if (executor_thread_.joinable()) {executor_thread_.join();}
-  spinning_ = false;
-  subscription_.reset();
-  publisher_.reset();
-  if (executor_ && node_) {executor_->remove_node(node_);}
-  executor_.reset();
-  node_.reset();
+  if (transport_) {transport_->stop();}
+  transport_.reset();
 }
 
 }  // namespace robstride_ros2

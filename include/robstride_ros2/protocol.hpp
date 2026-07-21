@@ -52,6 +52,8 @@ constexpr uint8_t kTypeStop = 4;
 constexpr uint8_t kTypeSetZero = 6;
 constexpr uint8_t kTypeReadParameter = 17;
 constexpr uint8_t kTypeWriteParameter = 18;
+constexpr uint8_t kMotorModeReset = 0;
+constexpr uint8_t kMotorModeRun = 2;
 constexpr uint16_t kIndexRunMode = 0x7005;
 constexpr uint16_t kIndexCanTimeout = 0x7028;
 

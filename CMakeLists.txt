@@ -18,9 +18,11 @@ if(hardware_interface_VERSION VERSION_GREATER_EQUAL "5.0.0")
 endif()
 
 add_library(${PROJECT_NAME} SHARED
+  src/can_transport.cpp
   src/command_mode.cpp
   src/protocol.cpp
   src/robstride_system.cpp
+  src/run_mode_recovery.cpp
 )
 target_include_directories(${PROJECT_NAME} PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -64,6 +66,13 @@ if(BUILD_TESTING)
   target_include_directories(test_protocol PRIVATE include)
   ament_add_gtest(test_command_mode test/test_command_mode.cpp src/command_mode.cpp)
   target_include_directories(test_command_mode PRIVATE include)
+  ament_add_gtest(test_can_transport test/test_can_transport.cpp)
+  target_link_libraries(test_can_transport ${PROJECT_NAME})
+  ament_add_gtest(test_run_mode_recovery
+    test/test_run_mode_recovery.cpp
+    src/run_mode_recovery.cpp
+  )
+  target_include_directories(test_run_mode_recovery PRIVATE include)
 endif()
 
 ament_export_include_directories(include)

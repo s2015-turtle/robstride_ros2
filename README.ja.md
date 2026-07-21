@@ -1,6 +1,17 @@
 # robstride_ros2
 
-RobStride Private Protocol用のROS 2 Humble `ros2_control` Hardware Componentです。CAN通信には`ros2_socketcan`の`can_msgs/msg/Frame`トピックを使用します。
+RobStride Private Protocol用のROS 2 `ros2_control` Hardware Componentです。Humble、Jazzy、Kilted、Lyrical、Rollingに対応し、CAN通信には`ros2_socketcan`の`can_msgs/msg/Frame`トピックを使用します。
+
+## 内部構成
+
+| component | 責務 |
+|---|---|
+| `RobStrideSystem` | `ros2_control` lifecycle、joint状態、command interface、起動・停止 |
+| `CanTransport` | `ros2_socketcan` topic、QoS、executor、最新Type 1指令と復帰要求の送信 |
+| `protocol` | RobStride拡張CAN IDとpayloadのencode/decode |
+| `command_mode` | jointごとのposition、velocity、effort claim検証 |
+
+jointの実行時情報は、公開state、feedback、command、claim状態、feedback状態、parameter応答状態に分けて管理します。state mutexを保持したままDDS publishは行いません。
 
 
 ## インストール
@@ -43,9 +54,12 @@ ros2 topic pub --rate 20 \
 | `host_can_id` | `253` | host CAN ID。`0..255` |
 | `can_tx_topic` | `to_can_bus` | `ros2_socketcan`への送信topic |
 | `can_rx_topic` | `from_can_bus` | `ros2_socketcan`からの受信topic |
-| `can_qos_depth` | `500` | Reliable / Volatile QoSのdepth。`1`以上 |
+| `can_rx_qos_depth` | `32` | 複数モーターのfeedback受信用QoSのdepth |
+| `motion_command_lifespan_ms` | `50` | 遅延したType 1指令をSocketCAN送信前に期限切れにする時間 |
 | `feedback_timeout_ms` | `3000` | Type 2が途絶えてからHardwareをERRORにするまでの時間 |
 | `fail_on_feedback_timeout` | `true` | feedback timeout時にHardwareをERRORへ遷移 |
+| `run_mode_recovery_timeout_ms` | `500` | active中にRunから外れたモーターの自動復帰を待つ時間 |
+| `run_mode_recovery_retry_interval_ms` | `100` | Type 3 enableを自動再送する最小間隔 |
 | `clear_faults_on_activate` | `true` | activate時にfault clearを送信 |
 | `set_zero_on_activate` | `false` | activate時に現在位置を機械ゼロへ設定 |
 | `shutdown_stop_repetitions` | `3` | 終了時のゼロ指令＋Type 4送信回数 |
@@ -54,6 +68,15 @@ ros2 topic pub --rate 20 \
 | `startup_connection_timeout_ms` | `3000` | `ros2_socketcan` publisher/subscriber接続待ち時間 |
 | `startup_confirmation_timeout_ms` | `500` | parameter読み戻し・Run応答の1回あたり待機時間 |
 | `startup_retries` | `3` | 起動parameter設定・enableの再試行回数 |
+
+Hardwareがactiveの間は、Type 2応答のmodeも監視します。モーターがResetなどの
+Run以外へ予期せず移行した場合はWARNを表示し、update loop内でDDS publishを行わずに
+Type 3 enableを再送します。Run応答を受信すれば運転を継続し、
+`run_mode_recovery_timeout_ms`以内にRunへ戻らなければ`read()`がERRORを返します。
+その後はcontroller managerがHardwareの`on_error()`を呼び、全モーターを停止します。
+復帰用Type 3もtransport threadから送るため、`read()`はDDS publishを行いません。
+deactivate時は未送信の復帰要求を破棄し、送信中のframeが完了してから停止処理を始めるため、
+停止開始後にEnableが送られることはありません。
 
 設定例：
 
@@ -65,6 +88,8 @@ ros2 topic pub --rate 20 \
   <param name="can_rx_topic">from_can_bus</param>
   <param name="feedback_timeout_ms">3000</param>
   <param name="fail_on_feedback_timeout">true</param>
+  <param name="run_mode_recovery_timeout_ms">500</param>
+  <param name="run_mode_recovery_retry_interval_ms">100</param>
   <param name="clear_faults_on_activate">true</param>
   <param name="set_zero_on_activate">false</param>
   <param name="shutdown_stop_repetitions">3</param>

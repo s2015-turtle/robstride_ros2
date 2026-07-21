@@ -22,6 +22,22 @@ repository. The preserved Japanese README is available as
 - Feedback timeout handling and repeated Type 4 stop frames during shutdown
 - A nonzero motor-side CAN watchdog configured on every activation
 
+## Internal structure
+
+The implementation keeps ROS control, CAN transport, and wire encoding in
+separate units:
+
+| Component | Responsibility |
+|---|---|
+| `RobStrideSystem` | `ros2_control` lifecycle, joint state, command claims, startup and shutdown |
+| `CanTransport` | `ros2_socketcan` topics, QoS, executor, latest motion, and recovery delivery |
+| `protocol` | RobStride extended CAN identifier and payload encoding/decoding |
+| `command_mode` | Validation of per-joint position, velocity, and effort claims |
+
+Joint runtime data is grouped by purpose: exported state, latest feedback,
+commands, claimed interfaces, feedback status, and parameter-response status.
+The state mutex never protects a DDS publish operation.
+
 ## Supported ROS 2 distributions
 
 The same source branch targets all currently supported ROS 2 distributions.
@@ -130,9 +146,12 @@ description.
 | `host_can_id` | `253` | Host CAN ID in the range `0..255` |
 | `can_tx_topic` | `to_can_bus` | Frames sent to `ros2_socketcan` |
 | `can_rx_topic` | `from_can_bus` | Frames received from `ros2_socketcan` |
-| `can_qos_depth` | `500` | Reliable, volatile QoS depth; must be at least 1 |
+| `can_rx_qos_depth` | `32` | Reliable, volatile feedback QoS depth; increase for large motor groups |
+| `motion_command_lifespan_ms` | `50` | Expire delayed Type 1 samples before stale motion can reach SocketCAN |
 | `feedback_timeout_ms` | `3000` | Maximum time without Type 2 feedback before returning ERROR |
 | `fail_on_feedback_timeout` | `true` | Stop the hardware when feedback times out |
+| `run_mode_recovery_timeout_ms` | `500` | Time allowed for an active motor to recover to Run mode before returning ERROR |
+| `run_mode_recovery_retry_interval_ms` | `100` | Minimum interval between automatic Type 3 enable retries |
 | `clear_faults_on_activate` | `true` | Send a Type 4 fault-clear request during activation |
 | `set_zero_on_activate` | `false` | Set the current motor position as mechanical zero |
 | `shutdown_stop_repetitions` | `3` | Number of zero commands and Type 4 stop frames sent at shutdown |
@@ -142,6 +161,34 @@ description.
 | `startup_confirmation_timeout_ms` | `500` | Per-attempt parameter and enable confirmation timeout |
 | `startup_retries` | `3` | Number of startup parameter and enable attempts |
 
+Periodic Type 1 commands and automatic recovery Type 3 commands do not publish
+to DDS from the `ros2_control` update thread. Each motor has one latest slot for
+each kind, and a dedicated transport thread publishes those slots with recovery
+before motion. A new command replaces an unsent older command, so the component
+cannot build a stale motion-command queue. The motion publisher also applies a
+DDS lifespan so expired samples are removed from the `ros2_socketcan`
+subscription queue. Startup parameter transactions and shutdown frames remain
+synchronous because their acknowledgements and ordering are part of the
+hardware lifecycle.
+
+The motion publisher history depth is always the configured motor count. It is
+an internal invariant, not a user parameter: each cycle can contain one latest
+frame per motor and no older cycle is retained.
+
+While the hardware lifecycle state is active, every Type 2 response is also
+checked for Run mode. If a motor unexpectedly reports Reset or another non-Run
+mode, the component logs a warning and retries Type 3 enable through the
+transport worker, without synchronous DDS publication in the update loop. A
+subsequent Run response completes recovery. If
+Run is not confirmed before `run_mode_recovery_timeout_ms`, `read()` returns
+ERROR; controller manager then invokes the hardware error lifecycle handling,
+which disables all motors and stops the transport.
+
+Deactivation first disables both asynchronous command slots and discards
+pending recovery. It then waits for any publication already in progress before
+sending stop transactions. This ordering prevents an Enable frame from being
+published after the stop sequence begins.
+
 Example:
 
 ```xml
@@ -150,9 +197,12 @@ Example:
   <param name="host_can_id">253</param>
   <param name="can_tx_topic">to_can_bus</param>
   <param name="can_rx_topic">from_can_bus</param>
-  <param name="can_qos_depth">500</param>
+  <param name="can_rx_qos_depth">32</param>
+  <param name="motion_command_lifespan_ms">50</param>
   <param name="feedback_timeout_ms">3000</param>
   <param name="fail_on_feedback_timeout">true</param>
+  <param name="run_mode_recovery_timeout_ms">500</param>
+  <param name="run_mode_recovery_retry_interval_ms">100</param>
   <param name="clear_faults_on_activate">true</param>
   <param name="set_zero_on_activate">false</param>
   <param name="shutdown_stop_repetitions">3</param>

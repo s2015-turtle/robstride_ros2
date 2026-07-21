@@ -18,9 +18,12 @@
       <param name="host_can_id">253</param>
       <param name="can_tx_topic">$(arg can_tx_topic)</param>
       <param name="can_rx_topic">$(arg can_rx_topic)</param>
-      <param name="can_qos_depth">500</param>
+      <param name="can_rx_qos_depth">32</param>
+      <param name="motion_command_lifespan_ms">50</param>
       <param name="feedback_timeout_ms">3000</param>
       <param name="fail_on_feedback_timeout">true</param>
+      <param name="run_mode_recovery_timeout_ms">500</param>
+      <param name="run_mode_recovery_retry_interval_ms">100</param>
       <param name="clear_faults_on_activate">true</param>
       <param name="set_zero_on_activate">false</param>
       <param name="shutdown_stop_repetitions">3</param>
