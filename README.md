@@ -17,31 +17,24 @@ repository. A Japanese README is available as
 - Position, velocity, and effort command interfaces for every joint
 - Different command modes for different motors at the same time
 - Model profiles for RS00, RS01, RS02, RS03, RS04, RS05, RS06, and EL05
-- Type 2 feedback for position, velocity, torque, temperature, and faults
+- Motor feedback for position, velocity, torque, temperature, and faults
 - Startup parameter readback and motor-enable confirmation
-- Feedback timeout handling and repeated Type 4 stop frames during shutdown
+- Feedback timeout handling and repeated stop commands during shutdown
 - A nonzero motor-side CAN watchdog configured on every activation
 
 ## Package structure
 
-The repository is a four-package workspace with a one-way dependency graph:
+The repository contains four ROS 2 packages:
 
 | Package | Responsibility |
 |---|---|
-| `robstride_driver` | Public driver library: protocol, `ros2_socketcan` topic transport, motor lifecycle, feedback, and Run-mode recovery |
-| `robstride_ros2_control` | Thin `hardware_interface::SystemInterface` adapter and plugin registration |
+| `robstride_driver` | CAN communication, motor commands, feedback, and recovery |
+| `robstride_ros2_control` | `ros2_control` Hardware Component |
 | `robstride_examples` | Motor-profile Xacro, controller configuration, and example launch |
-| `robstride_ros2` | Aggregate package that installs the other three packages |
+| `robstride_ros2` | Installs the complete set of packages |
 
-`robstride_driver` does not depend on `hardware_interface`. HardwareInfo parsing
-and command-interface switching belong to `robstride_ros2_control`, which maps
-the standard lifecycle callbacks to the driver's `open`, `start`,
-`update_state`, and `send_commands` operations.
-Installable headers live under each package's `include/` tree. Private adapter
-headers live under `robstride_ros2_control/internal/` and are never installed.
 The plugin identifier `robstride_ros2/RobStrideSystem` remains compatible with
-existing robot descriptions. Development headers and example resources now
-belong to their responsibility-specific packages.
+existing robot descriptions.
 
 ## Supported ROS 2 distributions
 
@@ -49,18 +42,15 @@ The same source branch targets all currently supported ROS 2 distributions.
 CI is configured to build and test every row independently with its Tier 1
 Ubuntu platform.
 
-| ROS 2 distribution | Ubuntu | `ros2_control` API |
-|---|---|---|
-| Humble | 22.04 (Jammy) | 2.x |
-| Jazzy | 24.04 (Noble) | 4.x |
-| Kilted | 24.04 (Noble) | 5.x |
-| Lyrical | 26.04 (Resolute) | 6.x |
-| Rolling | 26.04 (Resolute) | current development version |
+| ROS 2 distribution | Ubuntu |
+|---|---|
+| Humble | 22.04 (Jammy) |
+| Jazzy | 24.04 (Noble) |
+| Kilted | 24.04 (Noble) |
+| Lyrical | 26.04 (Resolute) |
+| Rolling | 26.04 (Resolute) |
 
-Humble and Jazzy use the original `HardwareInfo` initialization callback.
-Kilted, Lyrical, and Rolling use the newer
-`HardwareComponentInterfaceParams` callback selected at build time. No
-distribution-specific source branch is required.
+No distribution-specific source branch is required.
 
 Rolling follows current upstream development and can introduce incompatible
 API changes before the next stable ROS 2 release. The Rolling CI job is the
@@ -68,21 +58,15 @@ compatibility signal for the exact source revision being tested.
 
 ## Protocol and firmware assumptions
 
-This package uses the 29-bit extended-frame private protocol described by the
-official manuals dated July 13, 2026. The motor must therefore be configured for
-the private protocol, not CANopen or the separate 11-bit MIT protocol.
+This package uses the 29-bit extended-frame private protocol documented in the
+official RobStride manuals. The motor must therefore be configured for the
+private protocol, not CANopen or the separate 11-bit MIT protocol. The listed
+EL05 and RS-series profiles use the common command and feedback formats defined
+in those manuals.
 
-The current official EL05 and RS-series manuals specify the same Type 1 command
-and Type 2 feedback layouts. In particular, Type 2 contains a 16-bit normalized
-angle, velocity, torque, and temperature. The manuals do not describe a
-model-specific Type 2 packet or explicitly state a single-encoder versus
-dual-encoder packet distinction. Encoder topology may affect how firmware
-obtains the reported angle; this package therefore applies the documented
-common Type 2 layout to all listed profiles.
-
-The profile limits below are protocol normalization ranges, not recommended
-mechanical operating limits. Apply tighter joint, velocity, and effort limits in
-your robot description when required.
+The profile limits below are the ranges used to encode and decode CAN values,
+not recommended mechanical operating limits. Apply tighter joint, velocity, and
+effort limits in your robot description when required.
 
 | Model | Position | Velocity | Torque | Kp | Kd |
 |---|---:|---:|---:|---:|---:|
@@ -152,67 +136,30 @@ description.
 | `can_tx_topic` | `to_can_bus` | Frames sent to `ros2_socketcan` |
 | `can_rx_topic` | `from_can_bus` | Frames received from `ros2_socketcan` |
 | `can_rx_qos_depth` | `32` | Reliable, volatile feedback QoS depth; increase for large motor groups |
-| `feedback_timeout_ms` | `3000` | Maximum time without Type 2 feedback before returning ERROR |
+| `feedback_timeout_ms` | `3000` | Maximum time without motor feedback before returning ERROR |
 | `fail_on_feedback_timeout` | `true` | Stop the hardware when feedback times out |
 | `run_mode_recovery_timeout_ms` | `500` | Time allowed for an active motor to recover to Run mode before returning ERROR |
-| `run_mode_recovery_retry_interval_ms` | `100` | Minimum interval between automatic Type 3 enable retries |
-| `clear_faults_on_activate` | `true` | Send a Type 4 fault-clear request during activation |
+| `run_mode_recovery_retry_interval_ms` | `100` | Minimum interval between automatic enable retries |
+| `clear_faults_on_activate` | `true` | Clear motor faults during activation |
 | `set_zero_on_activate` | `false` | Set the current motor position as mechanical zero |
-| `shutdown_stop_repetitions` | `3` | Number of zero commands and Type 4 stop frames sent at shutdown |
+| `shutdown_stop_repetitions` | `3` | Number of zero and stop commands sent at shutdown |
 | `shutdown_stop_interval_ms` | `20` | Delay between repeated shutdown frames |
-| `shutdown_confirmation_timeout_ms` | `300` | Wait for Type 2 Reset mode; `0` disables confirmation |
+| `shutdown_confirmation_timeout_ms` | `300` | Wait for Reset mode feedback; `0` disables confirmation |
 | `startup_connection_timeout_ms` | `3000` | Wait for the `ros2_socketcan` topic endpoints |
 | `startup_confirmation_timeout_ms` | `500` | Per-attempt parameter and enable confirmation timeout |
 | `startup_retries` | `3` | Number of startup parameter and enable attempts |
 
-The deprecated `can_qos_depth` name is accepted as an alias for
-`can_rx_qos_depth`. New descriptions should use the current name.
+While active, the hardware monitors each motor's operating state. If a motor
+unexpectedly leaves Run mode, the component logs a warning and attempts to
+enable it again. Commands resume after Run mode is confirmed. If recovery does
+not complete within `run_mode_recovery_timeout_ms`, the hardware reports an
+error and stops all motors.
 
-All outgoing CAN frames pass through one transport worker and one DDS
-DataWriter, so lifecycle transactions and active commands have a single publish
-order. Before publication, each motor has one pending Type 1 slot; a newer
-command replaces an older unsent command. Transactions remain FIFO. Once a
-sample has been handed to DDS, delivery and buffering are governed by the RMW
-and `ros2_socketcan`; the driver does not claim per-motor latest-value semantics
-inside those downstream queues.
-
-While the hardware lifecycle state is active, every Type 2 response is also
-checked for Run mode. If a motor unexpectedly reports Reset or another non-Run
-mode, the component logs a warning and retries Type 3 enable through the
-transport worker, without synchronous DDS publication in the update loop. A
-motor's Type 1 slot is held during recovery and released only after a subsequent
-Run response. If Run is not confirmed before `run_mode_recovery_timeout_ms`, `read()` returns
-ERROR; controller manager then invokes the hardware error lifecycle handling,
-which disables all motors and stops the transport.
-
-Deactivation increments an active-generation counter, discards pending active
-frames, and waits for any publication already in progress before queuing stop
-transactions. Frames extracted by the worker under an older generation are
-rejected even if the hardware is later reactivated. Transport shutdown drains
-queued lifecycle transactions before stopping the worker, so locally queued
-zero-command and Type 4 frames are not discarded.
-
-Example:
+Minimal example using the default settings:
 
 ```xml
 <hardware>
   <plugin>robstride_ros2/RobStrideSystem</plugin>
-  <param name="host_can_id">253</param>
-  <param name="can_tx_topic">to_can_bus</param>
-  <param name="can_rx_topic">from_can_bus</param>
-  <param name="can_rx_qos_depth">32</param>
-  <param name="feedback_timeout_ms">3000</param>
-  <param name="fail_on_feedback_timeout">true</param>
-  <param name="run_mode_recovery_timeout_ms">500</param>
-  <param name="run_mode_recovery_retry_interval_ms">100</param>
-  <param name="clear_faults_on_activate">true</param>
-  <param name="set_zero_on_activate">false</param>
-  <param name="shutdown_stop_repetitions">3</param>
-  <param name="shutdown_stop_interval_ms">20</param>
-  <param name="shutdown_confirmation_timeout_ms">300</param>
-  <param name="startup_connection_timeout_ms">3000</param>
-  <param name="startup_confirmation_timeout_ms">500</param>
-  <param name="startup_retries">3</param>
 </hardware>
 ```
 
@@ -224,11 +171,11 @@ Each `<joint>` requires its own motor settings.
 |---|---:|---|
 | `can_id` | required | Unique motor CAN ID in the range `1..255` |
 | `can_timeout_ticks` | required | Nonzero motor-side CAN watchdog; 20,000 ticks equals 1 second |
-| `position_min/max` | required | Type 1/2 wire normalization range in radians |
-| `velocity_min/max` | required | Type 1/2 wire normalization range in rad/s |
+| `position_min/max` | required | CAN encoding range in radians |
+| `velocity_min/max` | required | CAN encoding range in rad/s |
 | `effort_min/max` | required | ROS effort-command clamp in Nm |
-| `effort_wire_min/max` | effort limits | Type 1/2 wire normalization range in Nm |
-| `kp_max` / `kd_max` | required | Type 1 gain normalization limits |
+| `effort_wire_min/max` | effort limits | CAN encoding range in Nm |
+| `kp_max` / `kd_max` | required | Gain encoding limits |
 | `kp` / `kd` | required | Gains used for position and velocity command interfaces |
 | `direction` | `1` | Joint direction; either `1` or `-1` |
 | `gear_ratio` | `1.0` | Additional protocol-side rotations per ROS joint rotation |
@@ -289,16 +236,15 @@ of host commands eventually forces the motor back to Reset mode.
 
 ## Controllers and command modes
 
-| Command interface | Controller type | Unit | Type 1 fields |
+| Command interface | Controller type | Unit | Motor command behavior |
 |---|---|---|---|
 | position | `position_controllers/JointGroupPositionController` | rad | position, Kp, and Kd |
 | velocity | `velocity_controllers/JointGroupVelocityController` | rad/s | velocity and Kd; Kp is zero |
 | effort | `effort_controllers/JointGroupEffortController` | Nm | torque feed-forward; Kp and Kd are zero |
 
-The hardware keeps every motor in private-protocol operation control mode
-(`run_mode = 0`) and maps the active ROS command interface into the appropriate
-Type 1 fields. A joint cannot claim more than one command interface at a time,
-but separate joints may use different modes simultaneously.
+The hardware maps the active ROS command interface to the corresponding motor
+command. A joint cannot claim more than one command interface at a time, but
+separate joints may use different modes simultaneously.
 
 Switch one joint group from position to velocity control:
 
@@ -349,13 +295,13 @@ ros2 topic pub --rate 20 \
 | Setting | Behavior |
 |---|---|
 | `can_timeout_ticks` | The motor returns to Reset mode after host commands stop |
-| `feedback_timeout_ms` | The hardware returns ERROR after Type 2 feedback stops |
-| `shutdown_stop_repetitions` | Zero Type 1 commands and Type 4 stop frames are repeated |
-| `shutdown_confirmation_timeout_ms` | The hardware waits for Type 2 Reset mode feedback |
+| `feedback_timeout_ms` | The hardware returns ERROR after motor feedback stops |
+| `shutdown_stop_repetitions` | Zero commands and stop commands are repeated |
+| `shutdown_confirmation_timeout_ms` | The hardware waits for Reset mode feedback |
 
 On deactivation, shutdown, error, or destruction while active, the component
-sends a zero Type 1 command followed by a Type 4 stop frame to every motor. If
-the ROS transport cannot deliver those frames, the configured motor-side CAN
+sends a zero command followed by a stop command to every motor. If the ROS
+transport cannot deliver those commands, the configured motor-side CAN
 watchdog is the final fallback.
 
 ## License
@@ -365,5 +311,4 @@ watchdog is the final fallback.
 ## References
 
 - [RobStride Product Information, revision `6ad12f5` (July 14, 2026)](https://github.com/RobStride/Product_Information/tree/6ad12f50006273b7ea4eea88980f927d97c22f0d)
-- [ros2_control: Writing a Hardware Component](https://control.ros.org/rolling/doc/ros2_control/hardware_interface/doc/writing_new_hardware_component.html)
 - [`ros2_socketcan`](https://github.com/autowarefoundation/ros2_socketcan)

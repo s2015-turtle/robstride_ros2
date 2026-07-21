@@ -9,7 +9,6 @@
 #include <utility>
 
 #include <hardware_interface/types/hardware_interface_type_values.hpp>
-#include <rclcpp/logging.hpp>
 
 namespace robstride_ros2_control
 {
@@ -138,8 +137,7 @@ JointData parse_joint(const hardware_interface::ComponentInfo & info)
 }
 }  // namespace
 
-DriverConfiguration parse_driver_configuration(
-  const hardware_interface::HardwareInfo & info, const rclcpp::Logger & logger)
+DriverConfiguration parse_driver_configuration(const hardware_interface::HardwareInfo & info)
 {
   DriverConfiguration configuration;
   auto & settings = configuration.settings;
@@ -152,18 +150,8 @@ DriverConfiguration parse_driver_configuration(
   settings.transport.transmit_topic = hardware_parameter_or(info, "can_tx_topic", "to_can_bus");
   settings.transport.receive_topic = hardware_parameter_or(info, "can_rx_topic", "from_can_bus");
 
-  const auto receive_qos = info.hardware_parameters.find("can_rx_qos_depth");
-  const auto legacy_qos = info.hardware_parameters.find("can_qos_depth");
-  const std::string receive_qos_depth = receive_qos != info.hardware_parameters.end() ?
-    receive_qos->second :
-    (legacy_qos != info.hardware_parameters.end() ? legacy_qos->second : "32");
-  settings.transport.receive_qos_depth = static_cast<size_t>(std::stoul(receive_qos_depth));
-  if (receive_qos == info.hardware_parameters.end() &&
-    legacy_qos != info.hardware_parameters.end())
-  {
-    RCLCPP_WARN(
-      logger, "Hardware parameter 'can_qos_depth' is deprecated; use 'can_rx_qos_depth'");
-  }
+  settings.transport.receive_qos_depth = static_cast<size_t>(
+    std::stoul(hardware_parameter_or(info, "can_rx_qos_depth", "32")));
 
   settings.feedback_timeout = std::chrono::milliseconds(
     std::stoi(hardware_parameter_or(info, "feedback_timeout_ms", "3000")));

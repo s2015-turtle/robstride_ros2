@@ -72,9 +72,6 @@ ros2 topic pub --rate 20 \
 | `startup_confirmation_timeout_ms` | `500` | parameter読み戻し・Run応答の1回あたり待機時間 |
 | `startup_retries` | `3` | 起動parameter設定・enableの再試行回数 |
 
-旧名の`can_qos_depth`も`can_rx_qos_depth`の非推奨aliasとして読み込みます。
-新しい設定では`can_rx_qos_depth`を使用してください。
-
 全送信frameは単一transport workerと単一DDS DataWriterを通るため、transactionと
 運転指令は一つのpublish順序を持ちます。DDSへ渡す前はモーターごとに未送信の最新Type 1を
 1件だけ保持します。DDSへ渡した後のbufferingはRMWと`ros2_socketcan`の管理対象であり、
