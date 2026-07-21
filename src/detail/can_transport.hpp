@@ -18,7 +18,7 @@
 #include <rclcpp/executors/single_threaded_executor.hpp>
 #include <rclcpp/rclcpp.hpp>
 
-#include "robstride_ros2/protocol.hpp"
+#include "detail/protocol.hpp"
 
 namespace robstride_ros2
 {

@@ -1,4 +1,4 @@
-#include "robstride_ros2/command_mode.hpp"
+#include "detail/command_mode.hpp"
 
 #include <algorithm>
 

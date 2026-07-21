@@ -10,7 +10,7 @@
 #include <utility>
 #include <vector>
 
-#include "robstride_ros2/can_transport.hpp"
+#include "detail/can_transport.hpp"
 
 namespace rs = robstride_ros2;
 using namespace std::chrono_literals;

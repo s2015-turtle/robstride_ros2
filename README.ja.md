@@ -6,12 +6,15 @@ RobStride Private Protocol用のROS 2 `ros2_control` Hardware Componentです。
 
 | component | 責務 |
 |---|---|
-| `RobStrideSystem` | `ros2_control` lifecycle、joint状態、command interface、起動・停止 |
+| `RobStrideSystem` | `ros2_control` callback、interface export、戻り値変換だけを行うadapter |
+| `RobStrideDriver` | モーター起動・停止、feedback、指令送信、Run mode復旧 |
+| `driver_config` | Hardwareおよびjoint parameterの解析・検証 |
+| `JointData` | jointごとの固定設定、公開state、command、feedback、復旧状態 |
 | `CanTransport` | `ros2_socketcan` topic、QoS、executor、最新Type 1指令と復帰要求の送信 |
 | `protocol` | RobStride拡張CAN IDとpayloadのencode/decode |
 | `command_mode` | jointごとのposition、velocity、effort claim検証 |
 
-jointの実行時情報は、公開state、feedback、command、claim状態、feedback状態、parameter応答状態に分けて管理します。state mutexを保持したままDDS publishは行いません。
+公開headerはplugin adapterだけです。`RobStrideSystem`は`on_configure`、`on_activate`、`read`、`write`をDriverの`open`、`start`、`update_state`、`send_commands`へ変換します。jointの実行時情報は役割ごとにまとめ、state mutexを保持したままDDS publishは行いません。
 
 
 ## インストール

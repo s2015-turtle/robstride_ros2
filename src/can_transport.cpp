@@ -1,4 +1,4 @@
-#include "robstride_ros2/can_transport.hpp"
+#include "detail/can_transport.hpp"
 
 #include <algorithm>
 #include <stdexcept>

@@ -21,6 +21,8 @@ Forthcoming
   ``can_rx_qos_depth``; transmit history is now managed internally.
 * Separate SocketCAN topic transport from the ros2_control hardware lifecycle,
   and group joint runtime data by state, command, claim, and response status.
+* Reduce ``RobStrideSystem`` to a thin ros2_control adapter and move configuration,
+  joint runtime state, motor operations, and recovery into internal driver modules.
 * Monitor Type 2 mode while active, retry enable through the transport worker,
   and escalate persistent recovery failures through the hardware ERROR path.
 * Contributors: Yamato.K

@@ -20,13 +20,17 @@ endif()
 add_library(${PROJECT_NAME} SHARED
   src/can_transport.cpp
   src/command_mode.cpp
+  src/driver_config.cpp
   src/protocol.cpp
+  src/robstride_driver.cpp
   src/robstride_system.cpp
-  src/run_mode_recovery.cpp
 )
 target_include_directories(${PROJECT_NAME} PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
+)
+target_include_directories(${PROJECT_NAME} PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 if(ROBSTRIDE_ROS2_USE_HARDWARE_COMPONENT_PARAMS)
   target_compile_definitions(${PROJECT_NAME}
@@ -57,22 +61,22 @@ install(TARGETS ${PROJECT_NAME}
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
 )
-install(DIRECTORY include/ DESTINATION include)
+install(FILES include/robstride_ros2/robstride_system.hpp
+  DESTINATION include/robstride_ros2
+)
 install(DIRECTORY config description launch DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   ament_add_gtest(test_protocol test/test_protocol.cpp src/protocol.cpp)
-  target_include_directories(test_protocol PRIVATE include)
+  target_include_directories(test_protocol PRIVATE src)
   ament_add_gtest(test_command_mode test/test_command_mode.cpp src/command_mode.cpp)
-  target_include_directories(test_command_mode PRIVATE include)
+  target_include_directories(test_command_mode PRIVATE src)
   ament_add_gtest(test_can_transport test/test_can_transport.cpp)
+  target_include_directories(test_can_transport PRIVATE src)
   target_link_libraries(test_can_transport ${PROJECT_NAME})
-  ament_add_gtest(test_run_mode_recovery
-    test/test_run_mode_recovery.cpp
-    src/run_mode_recovery.cpp
-  )
-  target_include_directories(test_run_mode_recovery PRIVATE include)
+  ament_add_gtest(test_joint_data test/test_joint_data.cpp)
+  target_include_directories(test_joint_data PRIVATE src)
 endif()
 
 ament_export_include_directories(include)

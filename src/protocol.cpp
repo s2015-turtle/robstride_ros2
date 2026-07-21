@@ -1,4 +1,4 @@
-#include "robstride_ros2/protocol.hpp"
+#include "detail/protocol.hpp"
 
 #include <algorithm>
 #include <cmath>

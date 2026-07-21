@@ -24,19 +24,23 @@ repository. A Japanese README is available as
 
 ## Internal structure
 
-The implementation keeps ROS control, CAN transport, and wire encoding in
-separate units:
+Only the plugin adapter is installed as a public header. Driver implementation
+details remain internal and are separated by responsibility:
 
 | Component | Responsibility |
 |---|---|
-| `RobStrideSystem` | `ros2_control` lifecycle, joint state, command claims, startup and shutdown |
+| `RobStrideSystem` | Thin `ros2_control` adapter: callbacks, interface export, and return-code mapping |
+| `RobStrideDriver` | Motor startup, shutdown, feedback processing, commands, and Run-mode recovery |
+| `driver_config` | Hardware and joint parameter parsing and validation |
+| `JointData` | Per-joint configuration, exported state, commands, feedback, and recovery state |
 | `CanTransport` | `ros2_socketcan` topics, QoS, executor, latest motion, and recovery delivery |
 | `protocol` | RobStride extended CAN identifier and payload encoding/decoding |
 | `command_mode` | Validation of per-joint position, velocity, and effort claims |
 
-Joint runtime data is grouped by purpose: exported state, latest feedback,
-commands, claimed interfaces, feedback status, and parameter-response status.
-The state mutex never protects a DDS publish operation.
+`RobStrideSystem` translates `on_configure`, `on_activate`, `read`, and `write`
+to the driver's `open`, `start`, `update_state`, and `send_commands` operations.
+Joint runtime data is grouped by purpose, and the state mutex never protects a
+DDS publish operation.
 
 ## Supported ROS 2 distributions
 
