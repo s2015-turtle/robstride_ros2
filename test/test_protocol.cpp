@@ -3,7 +3,7 @@
 #include <array>
 #include <cmath>
 
-#include "detail/protocol.hpp"
+#include "protocol/protocol.hpp"
 
 namespace rs = robstride_ros2;
 

@@ -2,8 +2,8 @@
 
 #include <gtest/gtest.h>
 
-#include "detail/joint_data.hpp"
-#include "detail/protocol.hpp"
+#include "driver/joint_data.hpp"
+#include "protocol/protocol.hpp"
 
 namespace rs = robstride_ros2;
 namespace detail = robstride_ros2::detail;

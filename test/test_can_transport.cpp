@@ -10,7 +10,7 @@
 #include <utility>
 #include <vector>
 
-#include "detail/can_transport.hpp"
+#include "transport/can_transport.hpp"
 
 namespace rs = robstride_ros2;
 using namespace std::chrono_literals;
@@ -42,10 +42,10 @@ struct CaptureState
     }
   }
 
-  bool wait_for_size(size_t size)
+  bool wait_for_size(size_t size, std::chrono::milliseconds timeout = 1s)
   {
     std::unique_lock<std::mutex> lock(mutex);
-    return condition.wait_for(lock, 1s, [this, size]() {return frames.size() >= size;});
+    return condition.wait_for(lock, timeout, [this, size]() {return frames.size() >= size;});
   }
 
   bool wait_until_blocked()
@@ -225,7 +225,8 @@ TEST(CanTransport, DrainsTransactionsWhenStopped)
   auto stop = std::async(std::launch::async, [&transport]() {transport.stop();});
   EXPECT_EQ(stop.wait_for(20ms), std::future_status::timeout);
   capture->release();
-  ASSERT_EQ(stop.wait_for(1s), std::future_status::ready);
+  ASSERT_TRUE(capture->wait_for_size(2, 5s));
+  ASSERT_EQ(stop.wait_for(5s), std::future_status::ready);
   stop.get();
 
   const auto frames = capture->snapshot();

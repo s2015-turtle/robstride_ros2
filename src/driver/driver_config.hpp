@@ -7,8 +7,8 @@
 #include <hardware_interface/system_interface.hpp>
 #include <rclcpp/logger.hpp>
 
-#include "detail/joint_data.hpp"
-#include "detail/can_transport.hpp"
+#include "driver/joint_data.hpp"
+#include "transport/can_transport.hpp"
 
 namespace robstride_ros2::detail
 {

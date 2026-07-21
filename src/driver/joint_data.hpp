@@ -5,7 +5,7 @@
 #include <limits>
 #include <string>
 
-#include "detail/protocol.hpp"
+#include "protocol/protocol.hpp"
 
 namespace robstride_ros2::detail
 {

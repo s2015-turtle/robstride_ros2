@@ -1,4 +1,4 @@
-#include "detail/command_mode.hpp"
+#include "driver/command_mode.hpp"
 
 #include <algorithm>
 

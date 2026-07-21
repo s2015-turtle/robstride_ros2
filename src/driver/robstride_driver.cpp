@@ -1,4 +1,4 @@
-#include "detail/robstride_driver.hpp"
+#include "driver/robstride_driver.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -8,8 +8,8 @@
 
 #include <rclcpp/logging.hpp>
 
-#include "detail/command_mode.hpp"
-#include "detail/protocol.hpp"
+#include "driver/command_mode.hpp"
+#include "protocol/protocol.hpp"
 
 namespace robstride_ros2::detail
 {

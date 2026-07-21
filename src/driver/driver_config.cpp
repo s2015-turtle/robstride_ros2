@@ -1,4 +1,4 @@
-#include "detail/driver_config.hpp"
+#include "driver/driver_config.hpp"
 
 #include <algorithm>
 #include <cmath>

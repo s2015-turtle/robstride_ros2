@@ -1,4 +1,4 @@
-#include "detail/can_transport.hpp"
+#include "transport/can_transport.hpp"
 
 #include <algorithm>
 #include <stdexcept>

@@ -7,7 +7,7 @@
 #include <pluginlib/class_list_macros.hpp>
 #include <rclcpp/logging.hpp>
 
-#include "detail/robstride_driver.hpp"
+#include "driver/robstride_driver.hpp"
 
 namespace robstride_ros2
 {

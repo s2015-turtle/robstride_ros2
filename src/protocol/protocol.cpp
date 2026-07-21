@@ -1,4 +1,4 @@
-#include "detail/protocol.hpp"
+#include "protocol/protocol.hpp"
 
 #include <algorithm>
 #include <cmath>

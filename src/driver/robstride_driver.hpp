@@ -13,7 +13,7 @@
 #include <rclcpp/clock.hpp>
 #include <rclcpp/logger.hpp>
 
-#include "detail/driver_config.hpp"
+#include "driver/driver_config.hpp"
 
 namespace robstride_ros2::detail
 {

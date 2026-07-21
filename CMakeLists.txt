@@ -18,12 +18,12 @@ if(hardware_interface_VERSION VERSION_GREATER_EQUAL "5.0.0")
 endif()
 
 add_library(${PROJECT_NAME} SHARED
-  src/can_transport.cpp
-  src/command_mode.cpp
-  src/driver_config.cpp
-  src/protocol.cpp
-  src/robstride_driver.cpp
+  src/driver/command_mode.cpp
+  src/driver/driver_config.cpp
+  src/driver/robstride_driver.cpp
+  src/protocol/protocol.cpp
   src/robstride_system.cpp
+  src/transport/can_transport.cpp
 )
 target_include_directories(${PROJECT_NAME} PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -68,9 +68,9 @@ install(DIRECTORY config description launch DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
-  ament_add_gtest(test_protocol test/test_protocol.cpp src/protocol.cpp)
+  ament_add_gtest(test_protocol test/test_protocol.cpp src/protocol/protocol.cpp)
   target_include_directories(test_protocol PRIVATE src)
-  ament_add_gtest(test_command_mode test/test_command_mode.cpp src/command_mode.cpp)
+  ament_add_gtest(test_command_mode test/test_command_mode.cpp src/driver/command_mode.cpp)
   target_include_directories(test_command_mode PRIVATE src)
   ament_add_gtest(test_can_transport test/test_can_transport.cpp)
   target_include_directories(test_can_transport PRIVATE src)
