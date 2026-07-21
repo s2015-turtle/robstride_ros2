@@ -32,7 +32,7 @@ if(COMMAND ament_target_dependencies)
   ament_target_dependencies(${PROJECT_NAME}
     hardware_interface pluginlib rclcpp rclcpp_lifecycle
   )
-  target_link_libraries(${PROJECT_NAME} PUBLIC robstride_driver::robstride_driver)
+  target_link_libraries(${PROJECT_NAME} robstride_driver::robstride_driver)
 else()
   target_link_libraries(${PROJECT_NAME} PUBLIC
     hardware_interface::hardware_interface

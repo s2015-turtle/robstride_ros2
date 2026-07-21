@@ -31,7 +31,7 @@ The repository is a four-package workspace with a one-way dependency graph:
 | `robstride_driver` | Public driver library: protocol, `ros2_socketcan` topic transport, motor lifecycle, feedback, and Run-mode recovery |
 | `robstride_ros2_control` | Thin `hardware_interface::SystemInterface` adapter and plugin registration |
 | `robstride_examples` | Motor-profile Xacro, controller configuration, and example launch |
-| `robstride_ros2` | Compatibility entry point preserving the original launch, configuration, Xacro, and plugin identifiers |
+| `robstride_ros2` | Aggregate package that installs the other three packages |
 
 `robstride_driver` does not depend on `hardware_interface`. HardwareInfo parsing
 and command-interface switching belong to `robstride_ros2_control`, which maps
@@ -39,10 +39,9 @@ the standard lifecycle callbacks to the driver's `open`, `start`,
 `update_state`, and `send_commands` operations.
 Installable headers live under each package's `include/` tree. Private adapter
 headers live under `robstride_ros2_control/internal/` and are never installed.
-The plugin, launch, and Xacro identifiers remain compatible. Code that directly
-included the former `<robstride_ros2/robstride_system.hpp>` development header
-must migrate to `<robstride_ros2_control/robstride_system.hpp>` and link
-`robstride_ros2_control`.
+The plugin identifier `robstride_ros2/RobStrideSystem` remains compatible with
+existing robot descriptions. Development headers and example resources now
+belong to their responsibility-specific packages.
 
 ## Supported ROS 2 distributions
 
@@ -124,12 +123,6 @@ controller. The canonical package is `robstride_examples`:
 
 ```bash
 ros2 launch robstride_examples robstride_example.launch.py interface:=can0
-```
-
-The original command remains available through the compatibility package:
-
-```bash
-ros2 launch robstride_ros2 robstride_example.launch.py interface:=can0
 ```
 
 Inspect the loaded hardware and feedback:

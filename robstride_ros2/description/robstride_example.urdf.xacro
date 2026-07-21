@@ -1,4 +1,0 @@
-<?xml version="1.0"?>
-<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="robstride_example_compatibility">
-  <xacro:include filename="$(find robstride_examples)/description/robstride_example.urdf.xacro"/>
-</robot>

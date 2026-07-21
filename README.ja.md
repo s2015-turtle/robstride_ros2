@@ -11,11 +11,11 @@ RobStride Private Protocol用のROS 2 `ros2_control` Hardware Componentです。
 | `robstride_driver` | protocol、`ros2_socketcan` topic transport、モーター起動・停止、feedback、Run mode復旧 |
 | `robstride_ros2_control` | `hardware_interface::SystemInterface` adapterとplugin登録 |
 | `robstride_examples` | 型番別Xacro、controller設定、example launch |
-| `robstride_ros2` | 従来のlaunch、設定、Xacro、plugin IDを維持する互換entry point |
+| `robstride_ros2` | 他の3 packageをまとめて導入するaggregate package |
 
 `robstride_driver`は`hardware_interface`へ依存しません。HardwareInfoの解析とcommand mode switchは`robstride_ros2_control`が担当し、`RobStrideSystem`は標準lifecycle callbackをDriver APIへ変換します。
 公開headerは各packageの`include/`、非公開のadapter headerは`robstride_ros2_control/internal/`へ置き、後者はinstallしません。
-plugin、launch、Xacroの識別子は互換です。従来の`<robstride_ros2/robstride_system.hpp>`を直接includeしていた開発コードのみ、`<robstride_ros2_control/robstride_system.hpp>`と`robstride_ros2_control`へのlinkへ移行してください。
+既存URDFとの互換性のためplugin ID `robstride_ros2/RobStrideSystem`は維持します。開発headerとexample resourceは責務別packageへ移動します。
 
 
 ## インストール
@@ -31,12 +31,6 @@ source install/setup.bash
 
 ```bash
 ros2 launch robstride_examples robstride_example.launch.py interface:=can0
-```
-
-従来のコマンドも互換パッケージ経由で使用できます。
-
-```bash
-ros2 launch robstride_ros2 robstride_example.launch.py interface:=can0
 ```
 
 確認：

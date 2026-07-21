@@ -3,7 +3,6 @@ project(robstride_ros2)
 
 find_package(ament_cmake REQUIRED)
 
-install(DIRECTORY config description launch DESTINATION share/${PROJECT_NAME})
 install(FILES LICENSE DESTINATION share/${PROJECT_NAME})
 
 ament_package()

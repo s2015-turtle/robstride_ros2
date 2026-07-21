@@ -23,13 +23,14 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 )
 if(COMMAND ament_target_dependencies)
   ament_target_dependencies(${PROJECT_NAME} can_msgs rclcpp)
+  target_link_libraries(${PROJECT_NAME} Threads::Threads)
 else()
   target_link_libraries(${PROJECT_NAME} PUBLIC
     ${can_msgs_TARGETS}
     rclcpp::rclcpp
   )
+  target_link_libraries(${PROJECT_NAME} PRIVATE Threads::Threads)
 endif()
-target_link_libraries(${PROJECT_NAME} PRIVATE Threads::Threads)
 
 install(TARGETS ${PROJECT_NAME}
   EXPORT export_${PROJECT_NAME}
