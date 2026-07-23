@@ -1,7 +1,7 @@
 # robstride_ros2
 
 RobStrideアクチュエータをprivate CAN protocolで制御する、非公式・コミュニティ管理のROS 2 `ros2_control` Hardware Componentです。
-CAN frameの送受信には[`ros2_socketcan`](https://github.com/autowarefoundation/ros2_socketcan)が提供する`can_msgs/msg/Frame` topicを使用します。
+CAN frameの送受信には`can_msgs/msg/Frame` topicを使用します。core packageは`can_msgs`に依存し、特定のSocketCAN bridgeを必要としません。
 
 本プロジェクトはRobStride社とは提携しておらず、同社による承認を受けたものではありません。protocolと型番別profileは、RobStride公式[`Product_Information`](https://github.com/RobStride/Product_Information) repositoryの英語版manualと照合しています。英語版READMEは[`README.md`](README.md)を参照してください。
 
@@ -22,12 +22,22 @@ repositoryには4つのROS 2 packageが含まれます。
 
 | package | 役割 |
 |---|---|
-| `robstride_driver` | CAN通信、モーター指令、feedback、復旧処理 |
+| `robstride_driver` | private protocolと`can_msgs` topic transport |
 | `robstride_ros2_control` | `ros2_control` Hardware Component |
 | `robstride_examples` | 型番別Xacro、controller設定、example launch |
 | `robstride_ros2` | 上記packageをまとめてインストールするaggregate package |
 
 既存のrobot descriptionとの互換性を保つため、plugin IDは`robstride_ros2/RobStrideSystem`を使用します。
+
+## CAN bridgeとの互換性
+
+`robstride_driver`と`robstride_ros2_control`は`can_msgs/msg/Frame` topicだけを使って通信します。互換性のある送受信topicを提供するCAN bridgeであれば、`ros2_socketcan`以外とも組み合わせられます。
+
+[`ros2_socketcan`](https://github.com/autowarefoundation/ros2_socketcan)へ直接依存するのは、そのbridgeを起動するlaunchを含む`robstride_examples`だけです。aggregate packageの`robstride_ros2`はexampleもまとめてインストールします。bridge非依存のHardware Componentとdriverだけをインストールする場合は、`robstride_ros2_control`までをbuildします。
+
+```bash
+colcon build --packages-up-to robstride_ros2_control --symlink-install
+```
 
 ## 対応ROS 2ディストリビューション
 
@@ -110,8 +120,8 @@ ros2 topic pub --rate 20 \
 | parameter | default | 説明 |
 |---|---:|---|
 | `host_can_id` | `253` | host CAN ID。範囲は`0..255` |
-| `can_tx_topic` | `to_can_bus` | `ros2_socketcan`へ送るframeのtopic |
-| `can_rx_topic` | `from_can_bus` | `ros2_socketcan`から受け取るframeのtopic |
+| `can_tx_topic` | `to_can_bus` | 送信する`can_msgs/msg/Frame` topic |
+| `can_rx_topic` | `from_can_bus` | 受信する`can_msgs/msg/Frame` topic |
 | `can_rx_qos_depth` | `32` | reliable・volatileなfeedback QoS depth。多数のモーターを使う場合は増加を検討 |
 | `feedback_timeout_ms` | `3000` | feedbackを受信できない状態でERRORを返すまでの時間 |
 | `fail_on_feedback_timeout` | `true` | feedback timeout時にHardwareを停止 |
@@ -122,7 +132,7 @@ ros2 topic pub --rate 20 \
 | `shutdown_stop_repetitions` | `3` | 終了時にゼロ指令と停止指令を送る回数 |
 | `shutdown_stop_interval_ms` | `20` | ゼロ指令と停止指令の送信セット間隔 |
 | `shutdown_confirmation_timeout_ms` | `300` | Reset modeのfeedbackを待つ時間。`0`で確認を無効化 |
-| `startup_connection_timeout_ms` | `3000` | `ros2_socketcan`のtopic endpointを待つ時間 |
+| `startup_connection_timeout_ms` | `3000` | CAN bridgeのtopic endpointを待つ時間 |
 | `startup_confirmation_timeout_ms` | `500` | parameterと有効化確認の1試行あたりのtimeout |
 | `startup_retries` | `3` | 起動時のparameter設定と有効化の最大試行回数 |
 

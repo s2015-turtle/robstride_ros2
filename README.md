@@ -2,8 +2,8 @@
 
 An unofficial, community-maintained ROS 2 `ros2_control` hardware component for
 RobStride actuators using the RobStride private CAN protocol.
-CAN frames are exchanged through the `can_msgs/msg/Frame` topics provided by
-[`ros2_socketcan`](https://github.com/autowarefoundation/ros2_socketcan).
+CAN frames are exchanged through `can_msgs/msg/Frame` topics. The core packages
+depend on `can_msgs` and do not require a specific SocketCAN bridge.
 
 This project is not affiliated with or endorsed by RobStride. The protocol and
 model profiles were checked against the English manuals in RobStride's official
@@ -28,13 +28,29 @@ The repository contains four ROS 2 packages:
 
 | Package | Responsibility |
 |---|---|
-| `robstride_driver` | CAN communication, motor commands, feedback, and recovery |
+| `robstride_driver` | Private protocol and `can_msgs` topic transport |
 | `robstride_ros2_control` | `ros2_control` Hardware Component |
 | `robstride_examples` | Motor-profile Xacro, controller configuration, and example launch |
 | `robstride_ros2` | Installs the complete set of packages |
 
 The plugin identifier `robstride_ros2/RobStrideSystem` remains compatible with
 existing robot descriptions.
+
+## CAN bridge compatibility
+
+`robstride_driver` and `robstride_ros2_control` communicate only through
+`can_msgs/msg/Frame` topics. They can be used with any CAN bridge that provides
+compatible transmit and receive topics.
+
+`robstride_examples` is the only package that directly depends on
+[`ros2_socketcan`](https://github.com/autowarefoundation/ros2_socketcan), because
+its example launch starts that bridge. The aggregate `robstride_ros2` package
+installs the examples as well. To install only the bridge-independent Hardware
+Component and driver, build through `robstride_ros2_control`:
+
+```bash
+colcon build --packages-up-to robstride_ros2_control --symlink-install
+```
 
 ## Supported ROS 2 distributions
 
@@ -133,8 +149,8 @@ description.
 | Parameter | Default | Description |
 |---|---:|---|
 | `host_can_id` | `253` | Host CAN ID in the range `0..255` |
-| `can_tx_topic` | `to_can_bus` | Frames sent to `ros2_socketcan` |
-| `can_rx_topic` | `from_can_bus` | Frames received from `ros2_socketcan` |
+| `can_tx_topic` | `to_can_bus` | Outgoing `can_msgs/msg/Frame` topic |
+| `can_rx_topic` | `from_can_bus` | Incoming `can_msgs/msg/Frame` topic |
 | `can_rx_qos_depth` | `32` | Reliable, volatile feedback QoS depth; increase for large motor groups |
 | `feedback_timeout_ms` | `3000` | Maximum time without motor feedback before returning ERROR |
 | `fail_on_feedback_timeout` | `true` | Stop the hardware when feedback times out |
@@ -145,7 +161,7 @@ description.
 | `shutdown_stop_repetitions` | `3` | Number of zero and stop commands sent at shutdown |
 | `shutdown_stop_interval_ms` | `20` | Delay between repeated shutdown frames |
 | `shutdown_confirmation_timeout_ms` | `300` | Wait for Reset mode feedback; `0` disables confirmation |
-| `startup_connection_timeout_ms` | `3000` | Wait for the `ros2_socketcan` topic endpoints |
+| `startup_connection_timeout_ms` | `3000` | Wait for the CAN bridge topic endpoints |
 | `startup_confirmation_timeout_ms` | `500` | Per-attempt parameter and enable confirmation timeout |
 | `startup_retries` | `3` | Number of startup parameter and enable attempts |
 

@@ -92,7 +92,7 @@ bool RobStrideDriver::start()
 {
   if (!transport_ || !transport_->wait_for_endpoints(settings_.connection_timeout)) {
     RCLCPP_ERROR(
-      logger_, "Timed out waiting for ros2_socketcan endpoints on '%s' and '%s'",
+      logger_, "Timed out waiting for CAN bridge endpoints on '%s' and '%s'",
       settings_.transport.transmit_topic.c_str(), settings_.transport.receive_topic.c_str());
     return false;
   }

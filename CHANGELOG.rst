@@ -10,7 +10,8 @@ Forthcoming
 * Add startup confirmation, feedback timeout handling, repeated shutdown
   commands, and a motor-side CAN watchdog.
 * Add compatibility with ROS 2 Humble, Jazzy, Kilted, Lyrical, and Rolling.
-* Use ros2_socketcan topics for CAN transport.
+* Use ``can_msgs/msg/Frame`` topics for CAN transport; the example launch uses
+  ``ros2_socketcan`` as its bridge.
 * Move periodic motion-frame publication to a latest-value transport thread so
   the controller update loop cannot accumulate stale commands before DDS publication.
 * Serialize all outbound frames through one DDS DataWriter and invalidate
