@@ -3,6 +3,6 @@
     name="robstride_ros2/RobStrideSystem"
     type="robstride_ros2_control::RobStrideSystem"
     base_class_type="hardware_interface::SystemInterface">
-    <description>RobStride private-CAN protocol system using ros2_socketcan topics.</description>
+    <description>RobStride private-CAN protocol system using can_msgs topics.</description>
   </class>
 </library>
