@@ -196,11 +196,20 @@ Each `<joint>` requires its own motor settings.
 | `direction` | `1` | Joint direction; either `1` or `-1` |
 | `gear_ratio` | `1.0` | Additional protocol-side rotations per ROS joint rotation |
 | `position_offset` | `0.0` | ROS joint position offset in radians |
+| `command_position_min/max` | full position range | Operational position-command limits in ROS joint radians |
+| `command_velocity_min/max` | full velocity range | Operational velocity-command limits in ROS joint rad/s |
+| `command_effort_min/max` | `effort_min/max` | Operational effort-command limits in ROS joint Nm |
 
 `gear_ratio` is an additional transmission transform for the surrounding robot.
 It is not the actuator's built-in reduction ratio. Leave it at `1.0` when the
 private-protocol angle already represents the actuator output used as the ROS
 joint position.
+
+The optional `command_*` limits let a robot use a narrower operating envelope
+without changing the motor model's CAN encoding ranges. They are expressed in
+ROS joint coordinates. Configuration fails if a limit is non-finite, reversed,
+or falls outside the corresponding CAN range after applying `direction`,
+`gear_ratio`, and `position_offset`.
 
 Every joint must export all three command interfaces and the three required
 state interfaces. `temperature` and `fault` are optional state interfaces:
@@ -240,7 +249,9 @@ Example:
 
 <joint name="wheel_joint_1">
   <xacro:robstride_edulite05_params
-    can_id="1" direction="1" kp="20.0" kd="0.8"/>
+    can_id="1" direction="1" kp="20.0" kd="0.8"
+    command_velocity_min="-5.0" command_velocity_max="5.0"
+    command_effort_min="-2.0" command_effort_max="2.0"/>
   <xacro:robstride_joint_interfaces/>
 </joint>
 ```

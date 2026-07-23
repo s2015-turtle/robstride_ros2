@@ -69,6 +69,8 @@ jobs:
             > /tmp/robstride_example.urdf
           xacro robstride_examples/test/test_motor_profiles.urdf.xacro \
             > /tmp/robstride_profile_test.urdf
+          xacro robstride_examples/test/test_command_limits.urdf.xacro \
+            > /tmp/robstride_command_limits_test.urdf
 
       - name: Check package set
         shell: bash
