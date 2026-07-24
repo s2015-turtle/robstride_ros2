@@ -207,6 +207,8 @@ Hardwareがactiveの間は、各モーターの動作状態を監視します。
 </joint>
 ```
 
+`kp`と`kd`はmodelの既定値ではなく、実際に使用されるcontrol gainであるため必須引数です。robotの機構と負荷に合わせて選定・検証してください。上記の値は使用例であり、推奨値ではありません。
+
 `4000`は本packageの安全上の既定値であり、モーターのfactory defaultではありません。公式manualでは`0`がfactory defaultでwatchdog無効、`20000` ticksが1秒です。本packageはhostからの指令が失われた場合にモーターをResetへ移行させるため、`0`を受け付けません。
 
 ## Controllerとcommand mode
