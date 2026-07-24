@@ -256,6 +256,10 @@ Example:
 </joint>
 ```
 
+`kp` and `kd` are required macro arguments because they are active control
+gains, not model defaults. Select and validate them for the robot mechanism and
+load. The values above are examples only.
+
 The common `4000` watchdog value is a package safety default, not a factory default.
 The official manuals document `0` as the factory value, which disables the
 watchdog, and `20000` ticks as 1 second. This package rejects zero so that loss

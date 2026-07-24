@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <limits>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -70,6 +72,11 @@ bool parse_bool(const std::string & value)
   throw std::runtime_error("boolean parameter must be true, false, 1, or 0; got '" + value + "'");
 }
 
+bool is_blank(const std::string & value)
+{
+  return value.find_first_not_of(" \t\r\n") == std::string::npos;
+}
+
 JointData parse_joint(const hardware_interface::ComponentInfo & info)
 {
   try {
@@ -93,11 +100,15 @@ JointData parse_joint(const hardware_interface::ComponentInfo & info)
       required_number(info.parameters, "kp_max"), required_number(info.parameters, "kd_max")};
     joint.kp = required_number(info.parameters, "kp");
     joint.kd = required_number(info.parameters, "kd");
-    joint.can_timeout_ticks = static_cast<uint32_t>(
-      std::stoul(info.parameters.at("can_timeout_ticks"), nullptr, 0));
-    if (joint.can_timeout_ticks == 0) {
-      throw std::runtime_error("can_timeout_ticks must be nonzero for fail-safe shutdown");
+    const auto & watchdog_text = info.parameters.at("can_timeout_ticks");
+    size_t watchdog_characters = 0;
+    const auto watchdog_value = std::stoull(watchdog_text, &watchdog_characters, 0);
+    if (watchdog_characters != watchdog_text.size() || watchdog_value == 0 ||
+      watchdog_value > std::numeric_limits<uint32_t>::max())
+    {
+      throw std::runtime_error("can_timeout_ticks must be a nonzero uint32 value");
     }
+    joint.can_timeout_ticks = static_cast<uint32_t>(watchdog_value);
     const auto direction = info.parameters.find("direction");
     joint.direction = direction == info.parameters.end() ? 1.0 : std::stod(direction->second);
     const auto gear_ratio = info.parameters.find("gear_ratio");
@@ -112,7 +123,20 @@ JointData parse_joint(const hardware_interface::ComponentInfo & info)
     if (!(joint.gear_ratio > 0.0) || !std::isfinite(joint.gear_ratio)) {
       throw std::runtime_error("gear_ratio must be finite and positive");
     }
-    if (!(joint.limits.position_min < joint.limits.position_max) ||
+    if (!std::isfinite(joint.position_offset)) {
+      throw std::runtime_error("position_offset must be finite");
+    }
+    if (!std::isfinite(joint.limits.position_min) ||
+      !std::isfinite(joint.limits.position_max) ||
+      !std::isfinite(joint.limits.velocity_min) ||
+      !std::isfinite(joint.limits.velocity_max) ||
+      !std::isfinite(joint.limits.effort_min) ||
+      !std::isfinite(joint.limits.effort_max) ||
+      !std::isfinite(joint.limits.effort_wire_min) ||
+      !std::isfinite(joint.limits.effort_wire_max) ||
+      !std::isfinite(joint.limits.kp_max) || !std::isfinite(joint.limits.kd_max) ||
+      !std::isfinite(joint.kp) || !std::isfinite(joint.kd) ||
+      !(joint.limits.position_min < joint.limits.position_max) ||
       !(joint.limits.velocity_min < joint.limits.velocity_max) ||
       !(joint.limits.effort_min < joint.limits.effort_max) ||
       !(joint.limits.effort_wire_min < joint.limits.effort_wire_max) ||
@@ -222,6 +246,9 @@ DriverConfiguration parse_driver_configuration(const hardware_interface::Hardwar
   settings.transport.node_name = info.name + "_can_transport";
   settings.transport.transmit_topic = hardware_parameter_or(info, "can_tx_topic", "to_can_bus");
   settings.transport.receive_topic = hardware_parameter_or(info, "can_rx_topic", "from_can_bus");
+  if (is_blank(settings.transport.transmit_topic) || is_blank(settings.transport.receive_topic)) {
+    throw std::runtime_error("CAN transmit and receive topic names must not be empty");
+  }
 
   settings.transport.receive_qos_depth = static_cast<size_t>(
     std::stoul(hardware_parameter_or(info, "can_rx_qos_depth", "32")));
