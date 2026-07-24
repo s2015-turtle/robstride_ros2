@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <limits>
@@ -24,6 +25,31 @@ struct CommandValues
   double position{std::numeric_limits<double>::quiet_NaN()};
   double velocity{0.0};
   double effort{0.0};
+};
+
+struct CommandLimits
+{
+  double position_min{0.0};
+  double position_max{0.0};
+  double velocity_min{0.0};
+  double velocity_max{0.0};
+  double effort_min{0.0};
+  double effort_max{0.0};
+
+  double clamp_position(double value) const noexcept
+  {
+    return std::clamp(value, position_min, position_max);
+  }
+
+  double clamp_velocity(double value) const noexcept
+  {
+    return std::clamp(value, velocity_min, velocity_max);
+  }
+
+  double clamp_effort(double value) const noexcept
+  {
+    return std::clamp(value, effort_min, effort_max);
+  }
 };
 
 struct ClaimedInterfaces
@@ -99,6 +125,7 @@ struct JointData
   double kp{0.0};
   double kd{0.0};
   uint32_t can_timeout_ticks{0};
+  CommandLimits command_limits{};
   bool exports_temperature{false};
   bool exports_fault{false};
   StateValues state{};

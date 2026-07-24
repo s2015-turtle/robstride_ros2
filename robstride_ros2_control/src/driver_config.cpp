@@ -37,6 +37,26 @@ double number_or_parameter(
          required_number(parameters, preferred_key) : required_number(parameters, default_key);
 }
 
+double number_or_value(
+  const std::unordered_map<std::string, std::string> & parameters,
+  const char * key, double default_value)
+{
+  const auto it = parameters.find(key);
+  return it == parameters.end() ? default_value : std::stod(it->second);
+}
+
+std::pair<double, double> ordered_range(double first, double second)
+{
+  return {std::min(first, second), std::max(first, second)};
+}
+
+bool contains_range(double outer_min, double outer_max, double inner_min, double inner_max)
+{
+  const double tolerance = 1e-12 * std::max(
+    {1.0, std::abs(outer_min), std::abs(outer_max), std::abs(inner_min), std::abs(inner_max)});
+  return inner_min >= outer_min - tolerance && inner_max <= outer_max + tolerance;
+}
+
 std::string hardware_parameter_or(
   const hardware_interface::HardwareInfo & info, const std::string & key,
   const std::string & default_value)
@@ -125,6 +145,59 @@ JointData parse_joint(const hardware_interface::ComponentInfo & info)
       joint.kd < 0.0 || joint.kd > joint.limits.kd_max)
     {
       throw std::runtime_error("invalid limits or gains");
+    }
+
+    const auto default_position = ordered_range(
+      joint.direction * (joint.limits.position_min / joint.gear_ratio) + joint.position_offset,
+      joint.direction * (joint.limits.position_max / joint.gear_ratio) + joint.position_offset);
+    const auto default_velocity = ordered_range(
+      joint.direction * (joint.limits.velocity_min / joint.gear_ratio),
+      joint.direction * (joint.limits.velocity_max / joint.gear_ratio));
+    const auto default_effort = ordered_range(
+      joint.direction * joint.limits.effort_min,
+      joint.direction * joint.limits.effort_max);
+    joint.command_limits = robstride_driver::CommandLimits{
+      number_or_value(info.parameters, "command_position_min", default_position.first),
+      number_or_value(info.parameters, "command_position_max", default_position.second),
+      number_or_value(info.parameters, "command_velocity_min", default_velocity.first),
+      number_or_value(info.parameters, "command_velocity_max", default_velocity.second),
+      number_or_value(info.parameters, "command_effort_min", default_effort.first),
+      number_or_value(info.parameters, "command_effort_max", default_effort.second)};
+
+    const auto & command = joint.command_limits;
+    if (!std::isfinite(command.position_min) || !std::isfinite(command.position_max) ||
+      !std::isfinite(command.velocity_min) || !std::isfinite(command.velocity_max) ||
+      !std::isfinite(command.effort_min) || !std::isfinite(command.effort_max) ||
+      !(command.position_min < command.position_max) ||
+      !(command.velocity_min < command.velocity_max) ||
+      !(command.effort_min < command.effort_max))
+    {
+      throw std::runtime_error("command limits must be finite and ordered");
+    }
+
+    const auto motor_position = ordered_range(
+      joint.direction * (command.position_min - joint.position_offset) * joint.gear_ratio,
+      joint.direction * (command.position_max - joint.position_offset) * joint.gear_ratio);
+    const auto motor_velocity = ordered_range(
+      joint.direction * command.velocity_min * joint.gear_ratio,
+      joint.direction * command.velocity_max * joint.gear_ratio);
+    const auto motor_effort = ordered_range(
+      joint.direction * command.effort_min,
+      joint.direction * command.effort_max);
+    if (!contains_range(
+        joint.limits.position_min, joint.limits.position_max,
+        motor_position.first, motor_position.second) ||
+      !contains_range(
+        joint.limits.velocity_min, joint.limits.velocity_max,
+        motor_velocity.first, motor_velocity.second) ||
+      !contains_range(
+        joint.limits.effort_min, joint.limits.effort_max,
+        motor_effort.first, motor_effort.second) ||
+      !contains_range(
+        joint.limits.effort_wire_min, joint.limits.effort_wire_max,
+        motor_effort.first, motor_effort.second))
+    {
+      throw std::runtime_error("command limits must remain within their CAN wire ranges");
     }
 
     const std::set<std::string> expected_commands{

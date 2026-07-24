@@ -163,8 +163,13 @@ Hardwareがactiveの間は、各モーターの動作状態を監視します。
 | `direction` | `1` | jointの方向。`1`または`-1` |
 | `gear_ratio` | `1.0` | ROS joint回転に対する追加のprotocol側回転比 |
 | `position_offset` | `0.0` | ROS joint位置offset `[rad]` |
+| `command_position_min/max` | position全範囲 | ROS joint座標での運用上の位置指令範囲 `[rad]` |
+| `command_velocity_min/max` | velocity全範囲 | ROS joint座標での運用上の速度指令範囲 `[rad/s]` |
+| `command_effort_min/max` | `effort_min/max` | ROS joint座標での運用上のeffort指令範囲 `[Nm]` |
 
 `gear_ratio`は、robot側に追加されたtransmissionの変換比です。アクチュエータ内蔵減速機の減速比ではありません。private protocolの角度がROS jointとして使用する出力軸角度を表す場合は、`1.0`のまま使用してください。
+
+任意指定の`command_*`は、型番固有のCAN encode範囲を変更せず、ロボットの運用範囲を狭めるための制限です。値はROS joint座標で指定します。有限値でない、最小値と最大値が逆、または`direction`・`gear_ratio`・`position_offset`の変換後にCAN範囲外となる設定は、configure時に拒否されます。
 
 各jointは3つのcommand interfaceと、position・velocity・effortのstate interfaceをすべてexportする必要があります。`temperature`と`fault`は省略できます。
 
@@ -202,7 +207,9 @@ Hardwareがactiveの間は、各モーターの動作状態を監視します。
 
 <joint name="wheel_joint_1">
   <xacro:robstride_edulite05_params
-    can_id="1" direction="1" kp="20.0" kd="0.8"/>
+    can_id="1" direction="1" kp="20.0" kd="0.8"
+    command_velocity_min="-5.0" command_velocity_max="5.0"
+    command_effort_min="-2.0" command_effort_max="2.0"/>
   <xacro:robstride_joint_interfaces/>
 </joint>
 ```

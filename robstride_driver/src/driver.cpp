@@ -39,11 +39,18 @@ bool RobStrideDriver::initialize(DriverConfiguration configuration)
   }
   std::set<uint8_t> can_ids;
   for (const auto & joint : configuration.joints) {
+    const auto & command = joint.command_limits;
     if (joint.can_id == 0 || joint.can_timeout_ticks == 0 ||
-      !can_ids.insert(joint.can_id).second)
+      !can_ids.insert(joint.can_id).second ||
+      !std::isfinite(command.position_min) || !std::isfinite(command.position_max) ||
+      !std::isfinite(command.velocity_min) || !std::isfinite(command.velocity_max) ||
+      !std::isfinite(command.effort_min) || !std::isfinite(command.effort_max) ||
+      !(command.position_min < command.position_max) ||
+      !(command.velocity_min < command.velocity_max) ||
+      !(command.effort_min < command.effort_max))
     {
       RCLCPP_ERROR(
-        logger_, "Joint '%s' has an invalid or duplicate CAN ID/watchdog", joint.name.c_str());
+        logger_, "Joint '%s' has an invalid ID, watchdog, or command limit", joint.name.c_str());
       return false;
     }
   }
@@ -198,13 +205,15 @@ void RobStrideDriver::send_commands()
   for (size_t joint_index = 0; joint_index < joints_.size(); ++joint_index) {
     const auto & joint = joints_[joint_index];
     const double joint_position = joint.claimed.position && std::isfinite(joint.command.position) ?
-      joint.command.position : joint.state.position;
+      joint.command_limits.clamp_position(joint.command.position) :
+      joint.command_limits.clamp_position(joint.state.position);
     const double motor_position = std::isfinite(joint_position) ?
       joint.direction * (joint_position - joint.position_offset) * joint.gear_ratio : 0.0;
     const double motor_velocity = joint.claimed.velocity && std::isfinite(joint.command.velocity) ?
-      joint.direction * joint.command.velocity * joint.gear_ratio : 0.0;
+      joint.direction * joint.command_limits.clamp_velocity(joint.command.velocity) *
+      joint.gear_ratio : 0.0;
     const double motor_effort = joint.claimed.effort && std::isfinite(joint.command.effort) ?
-      joint.direction * joint.command.effort : 0.0;
+      joint.direction * joint.command_limits.clamp_effort(joint.command.effort) : 0.0;
     const double kp = joint.claimed.position ? joint.kp : 0.0;
     const double kd = (joint.claimed.position || joint.claimed.velocity) ? joint.kd : 0.0;
     transport_->queue_motion_frame(

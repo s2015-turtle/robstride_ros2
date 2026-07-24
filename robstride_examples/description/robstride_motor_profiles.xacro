@@ -18,59 +18,76 @@
     <state_interface name="fault"/>
   </xacro:macro>
 
-  <xacro:macro name="robstride_rs00_params" params="can_id kp kd direction:=1 gear_ratio:=1.0 position_offset:=0.0 can_timeout_ticks:=4000">
+  <xacro:macro name="robstride_command_limits" params="position_min position_max velocity_min velocity_max effort_min effort_max">
+    <xacro:if value="${position_min != ''}"><param name="command_position_min">${position_min}</param></xacro:if>
+    <xacro:if value="${position_max != ''}"><param name="command_position_max">${position_max}</param></xacro:if>
+    <xacro:if value="${velocity_min != ''}"><param name="command_velocity_min">${velocity_min}</param></xacro:if>
+    <xacro:if value="${velocity_max != ''}"><param name="command_velocity_max">${velocity_max}</param></xacro:if>
+    <xacro:if value="${effort_min != ''}"><param name="command_effort_min">${effort_min}</param></xacro:if>
+    <xacro:if value="${effort_max != ''}"><param name="command_effort_max">${effort_max}</param></xacro:if>
+  </xacro:macro>
+
+  <xacro:macro name="robstride_rs00_params" params="can_id kp kd direction:=1 gear_ratio:=1.0 position_offset:=0.0 can_timeout_ticks:=4000 command_position_min:='' command_position_max:='' command_velocity_min:='' command_velocity_max:='' command_effort_min:='' command_effort_max:=''">
     <param name="can_id">${can_id}</param><param name="can_timeout_ticks">${can_timeout_ticks}</param><param name="position_min">-12.566370614</param><param name="position_max">12.566370614</param>
     <param name="velocity_min">-33.0</param><param name="velocity_max">33.0</param><param name="effort_min">-14.0</param><param name="effort_max">14.0</param>
     <param name="effort_wire_min">-14.0</param><param name="effort_wire_max">14.0</param><param name="kp_max">500.0</param><param name="kd_max">5.0</param>
     <param name="kp">${kp}</param><param name="kd">${kd}</param><param name="direction">${direction}</param><param name="gear_ratio">${gear_ratio}</param><param name="position_offset">${position_offset}</param>
+    <xacro:robstride_command_limits position_min="${command_position_min}" position_max="${command_position_max}" velocity_min="${command_velocity_min}" velocity_max="${command_velocity_max}" effort_min="${command_effort_min}" effort_max="${command_effort_max}"/>
   </xacro:macro>
 
-  <xacro:macro name="robstride_rs01_params" params="can_id kp kd direction:=1 gear_ratio:=1.0 position_offset:=0.0 can_timeout_ticks:=4000">
+  <xacro:macro name="robstride_rs01_params" params="can_id kp kd direction:=1 gear_ratio:=1.0 position_offset:=0.0 can_timeout_ticks:=4000 command_position_min:='' command_position_max:='' command_velocity_min:='' command_velocity_max:='' command_effort_min:='' command_effort_max:=''">
     <param name="can_id">${can_id}</param><param name="can_timeout_ticks">${can_timeout_ticks}</param><param name="position_min">-12.566370614</param><param name="position_max">12.566370614</param>
     <param name="velocity_min">-44.0</param><param name="velocity_max">44.0</param><param name="effort_min">-17.0</param><param name="effort_max">17.0</param>
     <param name="effort_wire_min">-17.0</param><param name="effort_wire_max">17.0</param><param name="kp_max">500.0</param><param name="kd_max">5.0</param>
     <param name="kp">${kp}</param><param name="kd">${kd}</param><param name="direction">${direction}</param><param name="gear_ratio">${gear_ratio}</param><param name="position_offset">${position_offset}</param>
+    <xacro:robstride_command_limits position_min="${command_position_min}" position_max="${command_position_max}" velocity_min="${command_velocity_min}" velocity_max="${command_velocity_max}" effort_min="${command_effort_min}" effort_max="${command_effort_max}"/>
   </xacro:macro>
 
-  <xacro:macro name="robstride_rs02_params" params="can_id kp kd direction:=1 gear_ratio:=1.0 position_offset:=0.0 can_timeout_ticks:=4000">
+  <xacro:macro name="robstride_rs02_params" params="can_id kp kd direction:=1 gear_ratio:=1.0 position_offset:=0.0 can_timeout_ticks:=4000 command_position_min:='' command_position_max:='' command_velocity_min:='' command_velocity_max:='' command_effort_min:='' command_effort_max:=''">
     <param name="can_id">${can_id}</param><param name="can_timeout_ticks">${can_timeout_ticks}</param><param name="position_min">-12.566370614</param><param name="position_max">12.566370614</param>
     <param name="velocity_min">-44.0</param><param name="velocity_max">44.0</param><param name="effort_min">-17.0</param><param name="effort_max">17.0</param>
     <param name="effort_wire_min">-17.0</param><param name="effort_wire_max">17.0</param><param name="kp_max">500.0</param><param name="kd_max">5.0</param>
     <param name="kp">${kp}</param><param name="kd">${kd}</param><param name="direction">${direction}</param><param name="gear_ratio">${gear_ratio}</param><param name="position_offset">${position_offset}</param>
+    <xacro:robstride_command_limits position_min="${command_position_min}" position_max="${command_position_max}" velocity_min="${command_velocity_min}" velocity_max="${command_velocity_max}" effort_min="${command_effort_min}" effort_max="${command_effort_max}"/>
   </xacro:macro>
 
-  <xacro:macro name="robstride_rs03_params" params="can_id kp kd direction:=1 gear_ratio:=1.0 position_offset:=0.0 can_timeout_ticks:=4000">
+  <xacro:macro name="robstride_rs03_params" params="can_id kp kd direction:=1 gear_ratio:=1.0 position_offset:=0.0 can_timeout_ticks:=4000 command_position_min:='' command_position_max:='' command_velocity_min:='' command_velocity_max:='' command_effort_min:='' command_effort_max:=''">
     <param name="can_id">${can_id}</param><param name="can_timeout_ticks">${can_timeout_ticks}</param><param name="position_min">-12.566370614</param><param name="position_max">12.566370614</param>
     <param name="velocity_min">-20.0</param><param name="velocity_max">20.0</param><param name="effort_min">-60.0</param><param name="effort_max">60.0</param>
     <param name="effort_wire_min">-60.0</param><param name="effort_wire_max">60.0</param><param name="kp_max">5000.0</param><param name="kd_max">100.0</param>
     <param name="kp">${kp}</param><param name="kd">${kd}</param><param name="direction">${direction}</param><param name="gear_ratio">${gear_ratio}</param><param name="position_offset">${position_offset}</param>
+    <xacro:robstride_command_limits position_min="${command_position_min}" position_max="${command_position_max}" velocity_min="${command_velocity_min}" velocity_max="${command_velocity_max}" effort_min="${command_effort_min}" effort_max="${command_effort_max}"/>
   </xacro:macro>
 
-  <xacro:macro name="robstride_rs04_params" params="can_id kp kd direction:=1 gear_ratio:=1.0 position_offset:=0.0 can_timeout_ticks:=4000">
+  <xacro:macro name="robstride_rs04_params" params="can_id kp kd direction:=1 gear_ratio:=1.0 position_offset:=0.0 can_timeout_ticks:=4000 command_position_min:='' command_position_max:='' command_velocity_min:='' command_velocity_max:='' command_effort_min:='' command_effort_max:=''">
     <param name="can_id">${can_id}</param><param name="can_timeout_ticks">${can_timeout_ticks}</param><param name="position_min">-12.566370614</param><param name="position_max">12.566370614</param>
     <param name="velocity_min">-15.0</param><param name="velocity_max">15.0</param><param name="effort_min">-120.0</param><param name="effort_max">120.0</param>
     <param name="effort_wire_min">-120.0</param><param name="effort_wire_max">120.0</param><param name="kp_max">5000.0</param><param name="kd_max">100.0</param>
     <param name="kp">${kp}</param><param name="kd">${kd}</param><param name="direction">${direction}</param><param name="gear_ratio">${gear_ratio}</param><param name="position_offset">${position_offset}</param>
+    <xacro:robstride_command_limits position_min="${command_position_min}" position_max="${command_position_max}" velocity_min="${command_velocity_min}" velocity_max="${command_velocity_max}" effort_min="${command_effort_min}" effort_max="${command_effort_max}"/>
   </xacro:macro>
 
-  <xacro:macro name="robstride_rs05_params" params="can_id kp kd direction:=1 gear_ratio:=1.0 position_offset:=0.0 can_timeout_ticks:=4000">
+  <xacro:macro name="robstride_rs05_params" params="can_id kp kd direction:=1 gear_ratio:=1.0 position_offset:=0.0 can_timeout_ticks:=4000 command_position_min:='' command_position_max:='' command_velocity_min:='' command_velocity_max:='' command_effort_min:='' command_effort_max:=''">
     <param name="can_id">${can_id}</param><param name="can_timeout_ticks">${can_timeout_ticks}</param><param name="position_min">-12.566370614</param><param name="position_max">12.566370614</param>
     <param name="velocity_min">-50.0</param><param name="velocity_max">50.0</param><param name="effort_min">-5.5</param><param name="effort_max">5.5</param>
     <param name="effort_wire_min">-5.5</param><param name="effort_wire_max">5.5</param><param name="kp_max">500.0</param><param name="kd_max">5.0</param>
     <param name="kp">${kp}</param><param name="kd">${kd}</param><param name="direction">${direction}</param><param name="gear_ratio">${gear_ratio}</param><param name="position_offset">${position_offset}</param>
+    <xacro:robstride_command_limits position_min="${command_position_min}" position_max="${command_position_max}" velocity_min="${command_velocity_min}" velocity_max="${command_velocity_max}" effort_min="${command_effort_min}" effort_max="${command_effort_max}"/>
   </xacro:macro>
 
-  <xacro:macro name="robstride_rs06_params" params="can_id kp kd direction:=1 gear_ratio:=1.0 position_offset:=0.0 can_timeout_ticks:=4000">
+  <xacro:macro name="robstride_rs06_params" params="can_id kp kd direction:=1 gear_ratio:=1.0 position_offset:=0.0 can_timeout_ticks:=4000 command_position_min:='' command_position_max:='' command_velocity_min:='' command_velocity_max:='' command_effort_min:='' command_effort_max:=''">
     <param name="can_id">${can_id}</param><param name="can_timeout_ticks">${can_timeout_ticks}</param><param name="position_min">-12.566370614</param><param name="position_max">12.566370614</param>
     <param name="velocity_min">-50.0</param><param name="velocity_max">50.0</param><param name="effort_min">-36.0</param><param name="effort_max">36.0</param>
     <param name="effort_wire_min">-36.0</param><param name="effort_wire_max">36.0</param><param name="kp_max">5000.0</param><param name="kd_max">100.0</param>
     <param name="kp">${kp}</param><param name="kd">${kd}</param><param name="direction">${direction}</param><param name="gear_ratio">${gear_ratio}</param><param name="position_offset">${position_offset}</param>
+    <xacro:robstride_command_limits position_min="${command_position_min}" position_max="${command_position_max}" velocity_min="${command_velocity_min}" velocity_max="${command_velocity_max}" effort_min="${command_effort_min}" effort_max="${command_effort_max}"/>
   </xacro:macro>
 
-  <xacro:macro name="robstride_edulite05_params" params="can_id kp kd direction:=1 gear_ratio:=1.0 position_offset:=0.0 can_timeout_ticks:=4000">
+  <xacro:macro name="robstride_edulite05_params" params="can_id kp kd direction:=1 gear_ratio:=1.0 position_offset:=0.0 can_timeout_ticks:=4000 command_position_min:='' command_position_max:='' command_velocity_min:='' command_velocity_max:='' command_effort_min:='' command_effort_max:=''">
     <param name="can_id">${can_id}</param><param name="can_timeout_ticks">${can_timeout_ticks}</param><param name="position_min">-12.566370614</param><param name="position_max">12.566370614</param>
     <param name="velocity_min">-50.0</param><param name="velocity_max">50.0</param><param name="effort_min">-6.0</param><param name="effort_max">6.0</param>
     <param name="effort_wire_min">-6.0</param><param name="effort_wire_max">6.0</param><param name="kp_max">500.0</param><param name="kd_max">5.0</param>
     <param name="kp">${kp}</param><param name="kd">${kd}</param><param name="direction">${direction}</param><param name="gear_ratio">${gear_ratio}</param><param name="position_offset">${position_offset}</param>
+    <xacro:robstride_command_limits position_min="${command_position_min}" position_max="${command_position_max}" velocity_min="${command_velocity_min}" velocity_max="${command_velocity_max}" effort_min="${command_effort_min}" effort_max="${command_effort_max}"/>
   </xacro:macro>
 </robot>

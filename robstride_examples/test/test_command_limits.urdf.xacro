@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="robstride_command_limits_test">
+  <xacro:include filename="../description/robstride_motor_profiles.xacro"/>
+
+  <ros2_control name="robstride_system" type="system">
+    <hardware>
+      <plugin>robstride_ros2/RobStrideSystem</plugin>
+    </hardware>
+    <joint name="motor1">
+      <xacro:robstride_edulite05_params
+        can_id="1"
+        kp="20.0"
+        kd="0.8"
+        command_position_min="-2.0"
+        command_position_max="2.0"
+        command_velocity_min="-5.0"
+        command_velocity_max="5.0"
+        command_effort_min="-2.0"
+        command_effort_max="2.0"/>
+      <xacro:robstride_joint_interfaces/>
+    </joint>
+  </ros2_control>
+</robot>
