@@ -2,8 +2,8 @@
 Changelog for package robstride_ros2_control
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.1.0 (2026-08-09)
+------------------
 * Add a ros2_control SystemInterface adapter backed by ``robstride_driver``.
 * Support position, velocity, and effort command-mode switching per joint.
 * Parse and validate optional ROS joint-coordinate command limits separately
