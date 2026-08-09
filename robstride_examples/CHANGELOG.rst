@@ -2,8 +2,8 @@
 Changelog for package robstride_examples
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.1.0 (2026-08-09)
+------------------
 * Add launch, controller configuration, and RS/EduLite actuator profiles.
 * Expose optional position, velocity, and effort command limits in every motor
   profile macro.

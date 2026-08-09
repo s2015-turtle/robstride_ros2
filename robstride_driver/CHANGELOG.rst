@@ -2,8 +2,8 @@
 Changelog for package robstride_driver
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.1.0 (2026-08-09)
+------------------
 * Add the RobStride private-CAN protocol, topic transport, motor lifecycle,
   feedback monitoring, and Run-mode recovery library.
 * Clamp position, velocity, and effort commands to per-joint operational
