@@ -2,6 +2,12 @@
 Changelog for package robstride_examples
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+0.1.1 (2026-08-25)
+------------------
+* Use ``forward_command_controller`` for position, velocity, and effort
+  examples across all supported ROS distributions.
+* Contributors: Yamato.K
+
 0.1.0 (2026-08-09)
 ------------------
 * Add launch, controller configuration, and RS/EduLite actuator profiles.

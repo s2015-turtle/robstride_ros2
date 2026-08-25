@@ -2,6 +2,11 @@
 Changelog for package robstride_ros2_control
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+0.1.1 (2026-08-25)
+------------------
+* Synchronize the package version for the multi-package compatibility release.
+* Contributors: Yamato.K
+
 0.1.0 (2026-08-09)
 ------------------
 * Add a ros2_control SystemInterface adapter backed by ``robstride_driver``.
