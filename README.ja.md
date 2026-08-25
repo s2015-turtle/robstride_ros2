@@ -222,9 +222,9 @@ Hardwareがactiveの間は、各モーターの動作状態を監視します。
 
 | command interface | controller type | 単位 | モーター指令 |
 |---|---|---|---|
-| position | `position_controllers/JointGroupPositionController` | rad | position、Kp、Kd |
-| velocity | `velocity_controllers/JointGroupVelocityController` | rad/s | velocity、Kd。Kpは0 |
-| effort | `effort_controllers/JointGroupEffortController` | Nm | torque feed-forward。KpとKdは0 |
+| position | `forward_command_controller/ForwardCommandController`（`interface_name: position`） | rad | position、Kp、Kd |
+| velocity | `forward_command_controller/ForwardCommandController`（`interface_name: velocity`） | rad/s | velocity、Kd。Kpは0 |
+| effort | `forward_command_controller/ForwardCommandController`（`interface_name: effort`） | Nm | torque feed-forward。KpとKdは0 |
 
 HardwareはactiveなROS command interfaceをモーター指令へ変換します。1つのjointで複数のcommand interfaceを同時に使用することはできませんが、別々のjointでは異なるmodeを同時に使用できます。
 

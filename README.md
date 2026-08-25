@@ -269,9 +269,9 @@ of host commands eventually forces the motor back to Reset mode.
 
 | Command interface | Controller type | Unit | Motor command behavior |
 |---|---|---|---|
-| position | `position_controllers/JointGroupPositionController` | rad | position, Kp, and Kd |
-| velocity | `velocity_controllers/JointGroupVelocityController` | rad/s | velocity and Kd; Kp is zero |
-| effort | `effort_controllers/JointGroupEffortController` | Nm | torque feed-forward; Kp and Kd are zero |
+| position | `forward_command_controller/ForwardCommandController` (`interface_name: position`) | rad | position, Kp, and Kd |
+| velocity | `forward_command_controller/ForwardCommandController` (`interface_name: velocity`) | rad/s | velocity and Kd; Kp is zero |
+| effort | `forward_command_controller/ForwardCommandController` (`interface_name: effort`) | Nm | torque feed-forward; Kp and Kd are zero |
 
 The hardware maps the active ROS command interface to the corresponding motor
 command. A joint cannot claim more than one command interface at a time, but

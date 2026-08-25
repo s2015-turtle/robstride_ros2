@@ -2,6 +2,12 @@
 Changelog for package robstride_ros2
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+0.1.1 (2026-08-25)
+------------------
+* Update the example-controller dependency set for all supported ROS
+  distributions.
+* Contributors: Yamato.K
+
 0.1.0 (2026-08-09)
 ------------------
 * Keep ``robstride_ros2`` as the aggregate installation entry point while the
