@@ -2,6 +2,13 @@
 Changelog for package robstride_driver
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+0.1.2 (2026-08-26)
+------------------
+* Apply ``gear_ratio`` when converting effort commands and feedback between
+  ROS joint and motor coordinates.
+* Add tests for unity and non-unity ratios with both joint directions.
+* Contributors: Yamato.K
+
 0.1.1 (2026-08-25)
 ------------------
 * Synchronize the package version for the multi-package compatibility release.

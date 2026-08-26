@@ -2,6 +2,12 @@
 Changelog for package robstride_ros2
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+0.1.2 (2026-08-26)
+------------------
+* Synchronize the aggregate package version for the effort transmission
+  conversion fix.
+* Contributors: Yamato.K
+
 0.1.1 (2026-08-25)
 ------------------
 * Update the example-controller dependency set for all supported ROS

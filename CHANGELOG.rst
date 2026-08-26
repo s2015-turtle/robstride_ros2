@@ -2,6 +2,15 @@
 Repository changelog for robstride_ros2
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+0.1.2 (2026-08-26)
+------------------
+* Apply ``gear_ratio`` to effort commands and feedback using the same ideal
+  transmission convention as position and velocity.
+* Derive and validate ROS joint effort limits in joint coordinates while
+  keeping motor clamp and CAN encoding limits in motor coordinates.
+* Document the motor-side and joint-side effort parameter semantics.
+* Contributors: Yamato.K
+
 0.1.1 (2026-08-25)
 ------------------
 * Use ``forward_command_controller`` for position, velocity, and effort
