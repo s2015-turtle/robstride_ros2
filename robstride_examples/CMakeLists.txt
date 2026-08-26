@@ -4,7 +4,7 @@ project(robstride_examples)
 find_package(ament_cmake REQUIRED)
 
 install(DIRECTORY config description launch DESTINATION share/${PROJECT_NAME})
-install(FILES LICENSE DESTINATION share/${PROJECT_NAME})
+install(FILES README.md CHANGELOG.rst LICENSE DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_cmake_pytest REQUIRED)

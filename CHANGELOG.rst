@@ -2,6 +2,15 @@
 Repository changelog for robstride_ros2
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+0.1.1 (2026-08-25)
+------------------
+* Use ``forward_command_controller`` for position, velocity, and effort
+  examples across all supported ROS 2 distributions.
+* Replace the distribution-specific example controller dependencies with the
+  common ``forward_command_controller`` dependency.
+* Keep all four packages on the same release version.
+* Contributors: Yamato.K
+
 0.1.0 (2026-08-09)
 ------------------
 * Add a ros2_control SystemInterface for the RobStride private CAN protocol.

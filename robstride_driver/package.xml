@@ -3,10 +3,11 @@
 <package format="3">
   <name>robstride_driver</name>
   <version>0.1.1</version>
-  <description>Protocol, CAN transport, and motor driver library for RobStride actuators.</description>
+  <description>RobStride private-CAN protocol, topic transport, motor lifecycle, and feedback library.</description>
   <maintainer email="ykturtler@outlook.com">yamato</maintainer>
   <license>MIT</license>
   <url type="website">https://github.com/s2015-turtle/robstride_ros2</url>
+  <url type="documentation">https://github.com/s2015-turtle/robstride_ros2/tree/main/robstride_driver</url>
   <url type="repository">https://github.com/s2015-turtle/robstride_ros2.git</url>
   <url type="bugtracker">https://github.com/s2015-turtle/robstride_ros2/issues</url>
 

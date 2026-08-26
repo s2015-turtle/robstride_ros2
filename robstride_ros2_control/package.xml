@@ -3,10 +3,11 @@
 <package format="3">
   <name>robstride_ros2_control</name>
   <version>0.1.1</version>
-  <description>ros2_control hardware component for RobStride CAN actuators.</description>
+  <description>ros2_control SystemInterface for multi-axis RobStride private-CAN actuators.</description>
   <maintainer email="ykturtler@outlook.com">yamato</maintainer>
   <license>MIT</license>
   <url type="website">https://github.com/s2015-turtle/robstride_ros2</url>
+  <url type="documentation">https://github.com/s2015-turtle/robstride_ros2/tree/main/robstride_ros2_control</url>
   <url type="repository">https://github.com/s2015-turtle/robstride_ros2.git</url>
   <url type="bugtracker">https://github.com/s2015-turtle/robstride_ros2/issues</url>
 
