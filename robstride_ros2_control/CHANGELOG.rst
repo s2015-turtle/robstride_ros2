@@ -2,6 +2,14 @@
 Changelog for package robstride_ros2_control
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+0.1.2 (2026-08-26)
+------------------
+* Derive default ROS joint effort limits from motor limits through
+  ``gear_ratio`` and ``direction``.
+* Validate explicit joint effort limits after converting them back to motor
+  clamp and CAN encoding coordinates.
+* Contributors: Yamato.K
+
 0.1.1 (2026-08-25)
 ------------------
 * Synchronize the package version for the multi-package compatibility release.
