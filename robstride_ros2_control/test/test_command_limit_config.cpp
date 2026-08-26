@@ -51,7 +51,7 @@ hardware_interface::HardwareInfo hardware_info()
 }
 }  // namespace
 
-TEST(CommandLimitConfig, DerivesBackwardCompatibleJointLimits)
+TEST(CommandLimitConfig, DerivesJointLimitsFromMotorRanges)
 {
   const auto configuration = rs::parse_driver_configuration(hardware_info());
   const auto & limits = configuration.joints[0].command_limits;
@@ -59,8 +59,8 @@ TEST(CommandLimitConfig, DerivesBackwardCompatibleJointLimits)
   EXPECT_DOUBLE_EQ(limits.position_max, 5.5);
   EXPECT_DOUBLE_EQ(limits.velocity_min, -10.0);
   EXPECT_DOUBLE_EQ(limits.velocity_max, 10.0);
-  EXPECT_DOUBLE_EQ(limits.effort_min, -6.0);
-  EXPECT_DOUBLE_EQ(limits.effort_max, 6.0);
+  EXPECT_DOUBLE_EQ(limits.effort_min, -12.0);
+  EXPECT_DOUBLE_EQ(limits.effort_max, 12.0);
 }
 
 TEST(CommandLimitConfig, AcceptsTighterOperationalLimits)
@@ -96,4 +96,24 @@ TEST(CommandLimitConfig, RejectsInvalidOrOutOfWireLimits)
   hardware.joints[0].parameters["command_effort_min"] = "2.0";
   hardware.joints[0].parameters["command_effort_max"] = "-2.0";
   EXPECT_THROW(rs::parse_driver_configuration(hardware), std::runtime_error);
+
+  hardware = hardware_info();
+  hardware.joints[0].parameters["command_effort_min"] = "-12.0";
+  hardware.joints[0].parameters["command_effort_max"] = "14.0";
+  EXPECT_THROW(rs::parse_driver_configuration(hardware), std::runtime_error);
+}
+
+TEST(CommandLimitConfig, DerivesOrderedEffortLimitsForNegativeDirection)
+{
+  auto hardware = hardware_info();
+  auto & parameters = hardware.joints[0].parameters;
+  parameters["effort_min"] = "-4.0";
+  parameters["effort_max"] = "6.0";
+  parameters["effort_wire_min"] = "-5.0";
+  parameters["effort_wire_max"] = "7.0";
+
+  const auto configuration = rs::parse_driver_configuration(hardware);
+  const auto & limits = configuration.joints[0].command_limits;
+  EXPECT_DOUBLE_EQ(limits.effort_min, -12.0);
+  EXPECT_DOUBLE_EQ(limits.effort_max, 8.0);
 }

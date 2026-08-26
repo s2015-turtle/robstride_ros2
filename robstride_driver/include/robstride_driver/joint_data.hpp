@@ -135,6 +135,16 @@ struct JointData
   FeedbackStatus feedback_status{};
   ParameterStatus parameter_status{};
   RecoveryState recovery{};
+
+  double joint_to_motor_effort(double joint_effort) const noexcept
+  {
+    return direction * joint_effort / gear_ratio;
+  }
+
+  double motor_to_joint_effort(double motor_effort) const noexcept
+  {
+    return direction * motor_effort * gear_ratio;
+  }
 };
 
 }  // namespace robstride_driver

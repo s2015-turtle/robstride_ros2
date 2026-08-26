@@ -156,8 +156,8 @@ Hardwareがactiveの間は、各モーターの動作状態を監視します。
 | `can_timeout_ticks` | 必須 | motor側CAN watchdog。非ゼロ必須。20,000 ticksで1秒 |
 | `position_min/max` | 必須 | CAN positionのencode・decode範囲 `[rad]` |
 | `velocity_min/max` | 必須 | CAN velocityのencode・decode範囲 `[rad/s]` |
-| `effort_min/max` | 必須 | ROS effort指令のclamp範囲 `[Nm]` |
-| `effort_wire_min/max` | effort制限と同じ | CAN effortのencode・decode範囲 `[Nm]` |
+| `effort_min/max` | 必須 | モーター側effortのclamp範囲 `[Nm]` |
+| `effort_wire_min/max` | effort制限と同じ | モーター側CAN effortのencode・decode範囲 `[Nm]` |
 | `kp_max` / `kd_max` | 必須 | gainのencode上限 |
 | `kp` / `kd` | 必須 | position・velocity command interfaceで使用するgain |
 | `direction` | `1` | jointの方向。`1`または`-1` |
@@ -165,9 +165,11 @@ Hardwareがactiveの間は、各モーターの動作状態を監視します。
 | `position_offset` | `0.0` | ROS joint位置offset `[rad]` |
 | `command_position_min/max` | position全範囲 | ROS joint座標での運用上の位置指令範囲 `[rad]` |
 | `command_velocity_min/max` | velocity全範囲 | ROS joint座標での運用上の速度指令範囲 `[rad/s]` |
-| `command_effort_min/max` | `effort_min/max` | ROS joint座標での運用上のeffort指令範囲 `[Nm]` |
+| `command_effort_min/max` | effort制限から算出 | ROS joint座標での運用上のeffort指令範囲 `[Nm]` |
 
 `gear_ratio`は、robot側に追加されたtransmissionの変換比です。アクチュエータ内蔵減速機の減速比ではありません。private protocolの角度がROS jointとして使用する出力軸角度を表す場合は、`1.0`のまま使用してください。
+
+effortにも同じ理想transmission変換を適用します。モーターへのeffort指令はROS joint effortを`gear_ratio`で割り、ROS jointへ返すfeedback effortはモーター側effortに`gear_ratio`を掛けます。`direction`は両方向の変換に適用されます。transmission効率は考慮しません。
 
 任意指定の`command_*`は、型番固有のCAN encode範囲を変更せず、ロボットの運用範囲を狭めるための制限です。値はROS joint座標で指定します。有限値でない、最小値と最大値が逆、または`direction`・`gear_ratio`・`position_offset`の変換後にCAN範囲外となる設定は、configure時に拒否されます。
 

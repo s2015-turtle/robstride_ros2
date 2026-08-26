@@ -18,6 +18,34 @@ TEST(CommandLimits, ClampsPositionVelocityAndEffort)
   EXPECT_DOUBLE_EQ(limits.clamp_effort(-6.0), -5.0);
 }
 
+TEST(JointData, ConvertsEffortBetweenJointAndMotorCoordinates)
+{
+  rs::JointData joint;
+  joint.gear_ratio = 2.0;
+
+  joint.direction = 1.0;
+  EXPECT_DOUBLE_EQ(joint.joint_to_motor_effort(6.0), 3.0);
+  EXPECT_DOUBLE_EQ(joint.motor_to_joint_effort(3.0), 6.0);
+
+  joint.direction = -1.0;
+  EXPECT_DOUBLE_EQ(joint.joint_to_motor_effort(6.0), -3.0);
+  EXPECT_DOUBLE_EQ(joint.motor_to_joint_effort(-3.0), 6.0);
+}
+
+TEST(JointData, UnityGearRatioPreservesExistingEffortMapping)
+{
+  rs::JointData joint;
+  joint.gear_ratio = 1.0;
+
+  joint.direction = 1.0;
+  EXPECT_DOUBLE_EQ(joint.joint_to_motor_effort(4.0), 4.0);
+  EXPECT_DOUBLE_EQ(joint.motor_to_joint_effort(4.0), 4.0);
+
+  joint.direction = -1.0;
+  EXPECT_DOUBLE_EQ(joint.joint_to_motor_effort(4.0), -4.0);
+  EXPECT_DOUBLE_EQ(joint.motor_to_joint_effort(-4.0), 4.0);
+}
+
 TEST(RecoveryState, IgnoresRunModeWhenHealthy)
 {
   detail::RecoveryState state;
