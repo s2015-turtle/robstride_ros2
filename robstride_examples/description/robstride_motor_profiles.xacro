@@ -4,8 +4,9 @@
     Private-protocol Type 1/2 normalization ranges verified against the English
     manuals dated July 13, 2026 in RobStride/Product_Information. These are wire
     ranges, not recommended mechanical limits. Apply tighter limits in the robot
-    model. gear_ratio represents an additional robot transmission and does not
-    describe the actuator's built-in reduction stage.
+    model. gear_ratio represents an ideal additional robot transmission for
+    position, velocity, and effort, and does not describe the actuator's
+    built-in reduction stage.
   -->
   <xacro:macro name="robstride_joint_interfaces">
     <command_interface name="position"/>

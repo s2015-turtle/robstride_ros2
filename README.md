@@ -189,8 +189,8 @@ Each `<joint>` requires its own motor settings.
 | `can_timeout_ticks` | required | Nonzero motor-side CAN watchdog; 20,000 ticks equals 1 second |
 | `position_min/max` | required | CAN encoding range in radians |
 | `velocity_min/max` | required | CAN encoding range in rad/s |
-| `effort_min/max` | required | ROS effort-command clamp in Nm |
-| `effort_wire_min/max` | effort limits | CAN encoding range in Nm |
+| `effort_min/max` | required | Motor-side effort clamp in Nm |
+| `effort_wire_min/max` | effort limits | Motor-side CAN encoding range in Nm |
 | `kp_max` / `kd_max` | required | Gain encoding limits |
 | `kp` / `kd` | required | Gains used for position and velocity command interfaces |
 | `direction` | `1` | Joint direction; either `1` or `-1` |
@@ -198,12 +198,17 @@ Each `<joint>` requires its own motor settings.
 | `position_offset` | `0.0` | ROS joint position offset in radians |
 | `command_position_min/max` | full position range | Operational position-command limits in ROS joint radians |
 | `command_velocity_min/max` | full velocity range | Operational velocity-command limits in ROS joint rad/s |
-| `command_effort_min/max` | `effort_min/max` | Operational effort-command limits in ROS joint Nm |
+| `command_effort_min/max` | derived from effort limits | Operational effort-command limits in ROS joint Nm |
 
 `gear_ratio` is an additional transmission transform for the surrounding robot.
 It is not the actuator's built-in reduction ratio. Leave it at `1.0` when the
 private-protocol angle already represents the actuator output used as the ROS
 joint position.
+
+Effort follows the same ideal transmission convention: motor command effort is
+ROS joint effort divided by `gear_ratio`, and ROS joint feedback effort is motor
+feedback effort multiplied by `gear_ratio`. `direction` is applied to both
+directions of the conversion. Transmission efficiency is not modeled.
 
 The optional `command_*` limits let a robot use a narrower operating envelope
 without changing the motor model's CAN encoding ranges. They are expressed in

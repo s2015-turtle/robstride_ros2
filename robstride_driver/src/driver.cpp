@@ -212,8 +212,10 @@ void RobStrideDriver::send_commands()
     const double motor_velocity = joint.claimed.velocity && std::isfinite(joint.command.velocity) ?
       joint.direction * joint.command_limits.clamp_velocity(joint.command.velocity) *
       joint.gear_ratio : 0.0;
-    const double motor_effort = joint.claimed.effort && std::isfinite(joint.command.effort) ?
-      joint.direction * joint.command_limits.clamp_effort(joint.command.effort) : 0.0;
+    const double motor_effort =
+      joint.claimed.effort && std::isfinite(joint.command.effort) ?
+      joint.joint_to_motor_effort(joint.command_limits.clamp_effort(joint.command.effort)) :
+      0.0;
     const double kp = joint.claimed.position ? joint.kp : 0.0;
     const double kd = (joint.claimed.position || joint.claimed.velocity) ? joint.kd : 0.0;
     transport_->queue_motion_frame(
@@ -289,7 +291,7 @@ void RobStrideDriver::receive_frame(can_msgs::msg::Frame::ConstSharedPtr msg)
   joint.feedback.position =
     joint.direction * (decoded->position / joint.gear_ratio) + joint.position_offset;
   joint.feedback.velocity = joint.direction * (decoded->velocity / joint.gear_ratio);
-  joint.feedback.effort = joint.direction * decoded->effort;
+  joint.feedback.effort = joint.motor_to_joint_effort(decoded->effort);
   joint.feedback.temperature = decoded->temperature;
   joint.feedback.fault = decoded->fault_flags;
   joint.feedback_status.mode = decoded->mode;

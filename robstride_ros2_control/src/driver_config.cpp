@@ -154,8 +154,8 @@ JointData parse_joint(const hardware_interface::ComponentInfo & info)
       joint.direction * (joint.limits.velocity_min / joint.gear_ratio),
       joint.direction * (joint.limits.velocity_max / joint.gear_ratio));
     const auto default_effort = ordered_range(
-      joint.direction * joint.limits.effort_min,
-      joint.direction * joint.limits.effort_max);
+      joint.motor_to_joint_effort(joint.limits.effort_min),
+      joint.motor_to_joint_effort(joint.limits.effort_max));
     joint.command_limits = robstride_driver::CommandLimits{
       number_or_value(info.parameters, "command_position_min", default_position.first),
       number_or_value(info.parameters, "command_position_max", default_position.second),
@@ -182,8 +182,8 @@ JointData parse_joint(const hardware_interface::ComponentInfo & info)
       joint.direction * command.velocity_min * joint.gear_ratio,
       joint.direction * command.velocity_max * joint.gear_ratio);
     const auto motor_effort = ordered_range(
-      joint.direction * command.effort_min,
-      joint.direction * command.effort_max);
+      joint.joint_to_motor_effort(command.effort_min),
+      joint.joint_to_motor_effort(command.effort_max));
     if (!contains_range(
         joint.limits.position_min, joint.limits.position_max,
         motor_position.first, motor_position.second) ||
