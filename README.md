@@ -9,7 +9,7 @@ This project is not affiliated with or endorsed by RobStride. The protocol and
 model profiles were checked against the English manuals in RobStride's official
 [`Product_Information`](https://github.com/RobStride/Product_Information)
 repository. A Japanese README is available as
-[`README.ja.md`](README.ja.md).
+[`doc/README.ja.md`](doc/README.ja.md).
 
 ## Features
 
