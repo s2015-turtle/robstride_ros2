@@ -3,7 +3,7 @@
 RobStrideアクチュエータをprivate CAN protocolで制御する、非公式・コミュニティ管理のROS 2 `ros2_control` Hardware Componentです。
 CAN frameの送受信には`can_msgs/msg/Frame` topicを使用します。core packageは`can_msgs`に依存し、特定のSocketCAN bridgeを必要としません。
 
-本プロジェクトはRobStride社とは提携しておらず、同社による承認を受けたものではありません。protocolと型番別profileは、RobStride公式[`Product_Information`](https://github.com/RobStride/Product_Information) repositoryの英語版manualと照合しています。英語版READMEは[`README.md`](README.md)を参照してください。
+本プロジェクトはRobStride社とは提携しておらず、同社による承認を受けたものではありません。protocolと型番別profileは、RobStride公式[`Product_Information`](https://github.com/RobStride/Product_Information) repositoryの英語版manualと照合しています。英語版READMEは[`README.md`](../README.md)を参照してください。
 
 ## 主な機能
 
@@ -189,7 +189,7 @@ effortにも同じ理想transmission変換を適用します。モーターへ�
 
 ## 型番別Xacro macro
 
-定義は[`robstride_examples/description/robstride_motor_profiles.xacro`](robstride_examples/description/robstride_motor_profiles.xacro)にあります。
+定義は[`robstride_examples/description/robstride_motor_profiles.xacro`](../robstride_examples/description/robstride_motor_profiles.xacro)にあります。
 
 | 型番 | macro | default watchdog ticks |
 |---|---|---:|
@@ -285,7 +285,7 @@ deactivate、shutdown、error、またはactive中のdestructionでは、すべ�
 
 ## License
 
-[MIT](LICENSE)
+[MIT](../LICENSE)
 
 ## 参考資料
 
