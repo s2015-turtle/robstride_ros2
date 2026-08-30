@@ -112,3 +112,70 @@ jobs:
             --base-paths . \
             --event-handlers console_cohesion+
           colcon test-result --verbose
+
+  vcan-integration:
+    name: vcan / ros2_socketcan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Install ROS 2 Jazzy
+        uses: ros-tooling/setup-ros@v0.7
+        with:
+          required-ros-distributions: jazzy
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y iproute2 kmod
+          rosdep update
+          rosdep install \
+            --from-paths . \
+            --ignore-src \
+            --rosdistro jazzy \
+            -r -y
+
+      - name: Create virtual CAN interface
+        shell: bash
+        run: |
+          sudo modprobe vcan
+          sudo ip link add dev vcan0 type vcan
+          sudo ip link set dev vcan0 up
+          ip -details link show vcan0
+
+      - name: Build integration target
+        shell: bash
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          colcon build \
+            --base-paths . \
+            --packages-select robstride_driver \
+            --event-handlers console_cohesion+
+
+      - name: Exercise both CAN directions
+        shell: bash
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          source install/setup.bash
+          ros2 launch ros2_socketcan socket_can_bridge.launch.xml \
+            interface:=vcan0 \
+            enable_can_fd:=false \
+            enable_frame_loopback:=true \
+            from_can_bus_topic:=/robstride_vcan/from_bus \
+            to_can_bus_topic:=/robstride_vcan/to_bus \
+            > /tmp/robstride_socketcan.log 2>&1 &
+          bridge_pid=$!
+          cleanup() {
+            kill -INT "${bridge_pid}" 2>/dev/null || true
+            wait "${bridge_pid}" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          build/robstride_driver/test_vcan_transport_integration || {
+            cat /tmp/robstride_socketcan.log
+            exit 1
+          }

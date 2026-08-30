@@ -15,6 +15,7 @@ CAN frameの送受信には`can_msgs/msg/Frame` topicを使用します。core p
 - 起動時のparameter読み戻しとモーター有効化確認
 - feedback timeoutと終了時の停止指令再送
 - activateのたびにmotor側CAN watchdogを非ゼロ値へ設定
+- CAN traffic、command coalescing、モーター別feedbackのdiagnostics
 
 ## パッケージ構成
 
@@ -248,6 +249,32 @@ ros2 topic pub --rate 20 \
 
 effort指令では同様に`robstride_effort_controller`を使用します。
 
+## CAN trafficの確認
+
+Hardware Componentがconfigureされている間、driverは標準の
+`diagnostic_msgs/msg/DiagnosticArray`を1秒ごとに`/diagnostics`へpublishします。
+
+```bash
+ros2 topic echo /diagnostics
+```
+
+`robstride_driver/CAN traffic`には、motion frame、recovery frame、
+lifecycle/parameter transaction frameそれぞれの送信数と、
+latest-command-wins queueで未送信frameが新しい値へ置き換えられた回数が表示されます。
+各`robstride_driver/<joint_name>`には、認識したfeedback数、平均feedback rate、
+現在のfeedback age、最大feedback ageが表示されます。
+
+rateはCAN transportをopenしてからの平均実測値であり、controller managerの
+update rateから推定した値ではありません。command生成がtransportの送信より速い場合は、
+そのモーターの未送信commandが置き換えられるため、controllerの要求rateと実際の
+CAN送信rateは一致せず、coalesced counterが増加します。
+
+複数モーターでは低めのupdate rateから開始し、実際の負荷でdiagnosticsを確認してください。
+coalesced countの継続的な増加、モーター別feedback rateの低下、feedback ageの増加が
+見られる場合は、update rateまたは他のCAN trafficを減らします。これらはdriver境界の
+実測値であり、bit stuffing、bitrate、モーターの応答動作、無関係なCAN trafficを含む
+bus utilizationの推定値ではありません。
+
 ## 複数モーター
 
 モーターごとに一意なjoint名とCAN IDを設定し、controller設定の`joints`でグループ分けします。例えばCAN ID 1～4を速度制御、5～6を位置制御にできます。
@@ -282,6 +309,10 @@ ros2 topic pub --rate 20 \
 | `shutdown_confirmation_timeout_ms` | Reset modeのfeedbackを待機 |
 
 deactivate、shutdown、error、またはactive中のdestructionでは、すべてのモーターへゼロ指令に続いて停止指令を送ります。ROS transportが指令を配送できなかった場合は、設定済みのmotor側CAN watchdogが最終的な停止手段になります。
+
+CIではLinuxの`vcan` interfaceと`ros2_socketcan`を使い、topic transportの送受信を
+実frame IDとpayloadまで検証します。物理CAN adapterやモーターを必要としませんが、
+実機のtimingやモーター動作を確認するhardware-in-the-loop testの代替ではありません。
 
 ## License
 
