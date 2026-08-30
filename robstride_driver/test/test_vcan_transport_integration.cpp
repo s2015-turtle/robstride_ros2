@@ -14,6 +14,7 @@
 #include <memory>
 #include <mutex>
 #include <stdexcept>
+#include <thread>
 
 #include <rclcpp/rclcpp.hpp>
 
@@ -111,6 +112,10 @@ int main(int argc, char ** argv)
       });
     transport.start();
     require(transport.wait_for_endpoints(5s), "ros2_socketcan endpoints did not appear");
+    // ros2_socketcan creates its DDS endpoints while configuring its lifecycle
+    // nodes. Give the automatic transition to Active time to complete before
+    // sending; its sender intentionally ignores frames in inactive states.
+    std::this_thread::sleep_for(500ms);
 
     const robstride_driver::Frame outgoing{
       0x18ff00a5, {{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08}}};
