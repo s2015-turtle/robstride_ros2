@@ -131,7 +131,10 @@ jobs:
         shell: bash
         run: |
           sudo apt-get update
-          sudo apt-get install -y iproute2 kmod
+          sudo apt-get install -y \
+            iproute2 \
+            kmod \
+            "linux-modules-extra-$(uname -r)"
           rosdep update
           rosdep install \
             --from-paths . \

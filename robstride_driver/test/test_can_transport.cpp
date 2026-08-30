@@ -7,6 +7,7 @@
 #include <mutex>
 #include <optional>
 #include <stdexcept>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -80,6 +81,17 @@ rs::CanTransport::FrameSink sink_for(const std::shared_ptr<CaptureState> & captu
   return [capture](const rs::Frame & frame) {capture->capture(frame);};
 }
 
+template<typename Predicate>
+bool wait_for_metric(Predicate predicate, std::chrono::milliseconds timeout = 1s)
+{
+  const auto deadline = std::chrono::steady_clock::now() + timeout;
+  while (std::chrono::steady_clock::now() < deadline) {
+    if (predicate()) {return true;}
+    std::this_thread::sleep_for(1ms);
+  }
+  return predicate();
+}
+
 struct CaptureReleaseGuard
 {
   explicit CaptureReleaseGuard(std::shared_ptr<CaptureState> capture_state)
@@ -137,6 +149,9 @@ TEST(CanTransport, HoldsMotionUntilRecoveryCompletes)
   transport.complete_recovery(0);
   ASSERT_TRUE(capture->wait_for_size(2));
   EXPECT_EQ(capture->snapshot()[1].id, 0x10u);
+  ASSERT_TRUE(wait_for_metric([&transport]() {
+    return transport.metrics().motion_frames_transmitted == 1;
+  }));
   const auto metrics = transport.metrics();
   EXPECT_EQ(metrics.recovery_frames_transmitted, 1u);
   EXPECT_EQ(metrics.motion_frames_transmitted, 1u);
@@ -160,6 +175,9 @@ TEST(CanTransport, PreservesTransactionOrderOnTheSingleWriter)
   EXPECT_EQ(frames[0].id, 0x20u);
   EXPECT_EQ(frames[1].id, 0x21u);
   EXPECT_EQ(frames[2].id, 0x22u);
+  ASSERT_TRUE(wait_for_metric([&transport]() {
+    return transport.metrics().transaction_frames_transmitted == 3;
+  }));
   const auto metrics = transport.metrics();
   EXPECT_EQ(metrics.transaction_frames_transmitted, 3u);
   EXPECT_GT(metrics.transmit_rate_hz(), 0.0);
@@ -186,6 +204,9 @@ TEST(CanTransport, ReplacesAnUnsentMotionFrameWithTheLatestValue)
   EXPECT_EQ(frames.size(), 2u);
   EXPECT_EQ(frames[0].id, 0x40u);
   EXPECT_EQ(frames[1].id, 0x11u);
+  ASSERT_TRUE(wait_for_metric([&transport]() {
+    return transport.metrics().motion_frames_transmitted == 1;
+  }));
   const auto metrics = transport.metrics();
   EXPECT_EQ(metrics.transaction_frames_transmitted, 1u);
   EXPECT_EQ(metrics.motion_frames_transmitted, 1u);
@@ -211,6 +232,9 @@ TEST(CanTransport, CountsCoalescedRecoveryFramesSeparately)
   ASSERT_TRUE(capture->wait_for_size(2));
   const auto frames = capture->snapshot();
   EXPECT_EQ(frames[1].id, 0x31u);
+  ASSERT_TRUE(wait_for_metric([&transport]() {
+    return transport.metrics().recovery_frames_transmitted == 1;
+  }));
   const auto metrics = transport.metrics();
   EXPECT_EQ(metrics.recovery_frames_transmitted, 1u);
   EXPECT_EQ(metrics.recovery_frames_coalesced, 1u);
