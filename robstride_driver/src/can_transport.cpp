@@ -159,7 +159,6 @@ void CanTransport::queue_recovery_frame(size_t motor_index, const Frame & frame)
       recovery_active_[motor_index] = false;
       return;
     }
-    if (pending_recovery_frames_[motor_index]) {++recovery_frames_coalesced_;}
     pending_recovery_frames_[motor_index] = ActiveFrame{frame, motor_index, generation};
   }
   pending_condition_.notify_one();
@@ -263,7 +262,6 @@ CanTransportMetrics CanTransport::metrics() const noexcept
   snapshot.recovery_frames_transmitted = recovery_frames_transmitted_.load();
   snapshot.transaction_frames_transmitted = transaction_frames_transmitted_.load();
   snapshot.motion_frames_coalesced = motion_frames_coalesced_.load();
-  snapshot.recovery_frames_coalesced = recovery_frames_coalesced_.load();
   const int64_t started_at = metrics_started_at_ns_.load();
   snapshot.observation_period = std::chrono::nanoseconds(
     started_at > 0 ? std::max<int64_t>(0, steady_now_ns() - started_at) : 0);
@@ -276,7 +274,6 @@ void CanTransport::reset_metrics() noexcept
   recovery_frames_transmitted_ = 0;
   transaction_frames_transmitted_ = 0;
   motion_frames_coalesced_ = 0;
-  recovery_frames_coalesced_ = 0;
   metrics_started_at_ns_ = steady_now_ns();
 }
 
@@ -316,7 +313,6 @@ void CanTransport::publish_diagnostics()
     value("tx_recovery_frames", snapshot.transport.recovery_frames_transmitted),
     value("tx_transaction_frames", snapshot.transport.transaction_frames_transmitted),
     value("coalesced_motion_frames", snapshot.transport.motion_frames_coalesced),
-    value("coalesced_recovery_frames", snapshot.transport.recovery_frames_coalesced),
     value("rx_robstride_frames", snapshot.received_frames()),
     decimal("rx_robstride_rate_hz", snapshot.receive_rate_hz())};
   message.status.push_back(std::move(transport_status));

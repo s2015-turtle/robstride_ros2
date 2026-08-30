@@ -14,7 +14,6 @@ struct CanTransportMetrics
   uint64_t recovery_frames_transmitted{0};
   uint64_t transaction_frames_transmitted{0};
   uint64_t motion_frames_coalesced{0};
-  uint64_t recovery_frames_coalesced{0};
   std::chrono::nanoseconds observation_period{0};
 
   uint64_t transmitted_frames() const noexcept

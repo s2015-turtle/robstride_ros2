@@ -313,7 +313,7 @@ ros2 topic echo /diagnostics
 
 The `robstride_driver/CAN traffic` entry reports transmitted motion, recovery,
 and lifecycle/parameter transaction frames separately. It also reports the
-number of motion or recovery frames replaced before transmission by the
+number of motion commands replaced before transmission by the
 latest-command-wins queue. Each `robstride_driver/<joint_name>` entry reports
 the recognized feedback count, average feedback rate, current feedback age,
 and maximum observed feedback age.

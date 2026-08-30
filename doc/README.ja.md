@@ -260,7 +260,7 @@ ros2 topic echo /diagnostics
 
 `robstride_driver/CAN traffic`には、motion frame、recovery frame、
 lifecycle/parameter transaction frameそれぞれの送信数と、
-latest-command-wins queueで未送信frameが新しい値へ置き換えられた回数が表示されます。
+latest-command-wins queueで未送信motion commandが新しい値へ置き換えられた回数が表示されます。
 各`robstride_driver/<joint_name>`には、認識したfeedback数、平均feedback rate、
 現在のfeedback age、最大feedback ageが表示されます。
 

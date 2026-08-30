@@ -101,7 +101,6 @@ private:
   std::atomic<uint64_t> recovery_frames_transmitted_{0};
   std::atomic<uint64_t> transaction_frames_transmitted_{0};
   std::atomic<uint64_t> motion_frames_coalesced_{0};
-  std::atomic<uint64_t> recovery_frames_coalesced_{0};
   std::atomic<int64_t> metrics_started_at_ns_{0};
 
   rclcpp::Node::SharedPtr node_;

@@ -19,9 +19,9 @@ Public headers are installed under `robstride_driver/` and cover:
 - lock-free snapshots of traffic counters and per-motor feedback timing.
 
 `RobStrideDriver::metrics()` returns the measured transmit categories,
-latest-command-wins replacement counts, recognized receive counts, and
-per-motor feedback rate and age. The snapshot reads atomic counters and does
-not acquire the transport worker or driver state mutex. When the normal ROS
+latest-command-wins motion-command replacement count, recognized receive
+counts, and per-motor feedback rate and age. The snapshot reads atomic counters
+and does not acquire the transport worker or driver state mutex. When the normal ROS
 topic transport is used, the same information is published once per second as
 standard diagnostics on `/diagnostics`.
 

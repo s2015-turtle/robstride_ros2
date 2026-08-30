@@ -164,7 +164,7 @@ jobs:
         run: |
           source /opt/ros/jazzy/setup.bash
           source install/setup.bash
-          ros2 launch ros2_socketcan socket_can_bridge.launch.xml \
+          setsid ros2 launch ros2_socketcan socket_can_bridge.launch.xml \
             interface:=vcan0 \
             enable_can_fd:=false \
             enable_frame_loopback:=true \
@@ -173,12 +173,21 @@ jobs:
             > /tmp/robstride_socketcan.log 2>&1 &
           bridge_pid=$!
           cleanup() {
-            kill -INT "${bridge_pid}" 2>/dev/null || true
+            kill -INT -- "-${bridge_pid}" 2>/dev/null || true
+            for _ in $(seq 1 20); do
+              if ! kill -0 "${bridge_pid}" 2>/dev/null; then
+                wait "${bridge_pid}" 2>/dev/null || true
+                return
+              fi
+              sleep 0.1
+            done
+            kill -KILL -- "-${bridge_pid}" 2>/dev/null || true
             wait "${bridge_pid}" 2>/dev/null || true
           }
           trap cleanup EXIT
 
-          build/robstride_driver/test_vcan_transport_integration || {
+          timeout --signal=TERM 20s \
+            build/robstride_driver/test_vcan_transport_integration || {
             cat /tmp/robstride_socketcan.log
             exit 1
           }

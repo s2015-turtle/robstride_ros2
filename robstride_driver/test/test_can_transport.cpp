@@ -214,34 +214,6 @@ TEST(CanTransport, ReplacesAnUnsentMotionFrameWithTheLatestValue)
   transport.stop();
 }
 
-TEST(CanTransport, CountsCoalescedRecoveryFramesSeparately)
-{
-  auto capture = std::make_shared<CaptureState>();
-  capture->blocking_id = 0x40;
-  rs::CanTransport transport(valid_options(), kReceiveCallback, sink_for(capture));
-  CaptureReleaseGuard release_guard(capture);
-  transport.start();
-  transport.enable_active_commands();
-
-  transport.send_transaction(rs::Frame{0x40, {}});
-  ASSERT_TRUE(capture->wait_until_blocked());
-  transport.queue_recovery_frame(0, rs::Frame{0x30, {}});
-  transport.queue_recovery_frame(0, rs::Frame{0x31, {}});
-  capture->release();
-
-  ASSERT_TRUE(capture->wait_for_size(2));
-  const auto frames = capture->snapshot();
-  EXPECT_EQ(frames[1].id, 0x31u);
-  ASSERT_TRUE(wait_for_metric([&transport]() {
-    return transport.metrics().recovery_frames_transmitted == 1;
-  }));
-  const auto metrics = transport.metrics();
-  EXPECT_EQ(metrics.recovery_frames_transmitted, 1u);
-  EXPECT_EQ(metrics.recovery_frames_coalesced, 1u);
-  EXPECT_EQ(metrics.motion_frames_coalesced, 0u);
-  transport.stop();
-}
-
 TEST(CanTransport, RejectsExtractedFramesFromAnOlderActivation)
 {
   auto capture = std::make_shared<CaptureState>();
