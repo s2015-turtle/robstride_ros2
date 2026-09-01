@@ -1,3 +1,4 @@
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <iostream>
@@ -168,6 +169,39 @@ void test_missing_stop_confirmation()
   require(motor.stop_count() >= 2, "stop retries were not sent without confirmation");
   driver.close();
 }
+
+void test_concurrent_control_recovery_and_shutdown()
+{
+  auto motor = make_fake_motor();
+  rs::RobStrideDriver driver(rclcpp::get_logger("vcan_fake_motor_concurrency"));
+  require(driver.initialize(configuration("vcan_fake_motor_concurrency")),
+    "initialization failed");
+  open_and_start(driver);
+  require(driver.apply_command_modes({rs::ClaimedInterfaces{false, true, false}}),
+    "velocity command mode was rejected");
+  driver.joints()[0].command.velocity = 1.0;
+
+  std::atomic<bool> cycling{true};
+  std::thread control_cycle([&]() {
+      while (cycling) {
+        driver.send_commands();
+        driver.update_state();
+        std::this_thread::sleep_for(1ms);
+      }
+    });
+
+  const uint64_t enables_before = motor.enable_count();
+  motor.report_reset();
+  const bool recovery_observed =
+    wait_until([&]() {return motor.enable_count() > enables_before;});
+  driver.stop();
+  cycling = false;
+  control_cycle.join();
+  require(recovery_observed, "concurrent feedback did not trigger recovery");
+  require(wait_until([&]() {return motor.mode() == rs::kMotorModeReset;}),
+    "concurrent shutdown did not stop the motor");
+  driver.close();
+}
 }  // namespace
 
 int main(int argc, char ** argv)
@@ -178,6 +212,7 @@ int main(int argc, char ** argv)
     test_feedback_timeout();
     test_parameter_confirmation_failure();
     test_missing_stop_confirmation();
+    test_concurrent_control_recovery_and_shutdown();
     rclcpp::shutdown();
     std::cout << "vcan fake RobStride motor integration passed\n";
     return 0;

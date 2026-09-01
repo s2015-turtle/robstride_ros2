@@ -76,6 +76,12 @@ bool RobStrideDriver::initialize(DriverConfiguration configuration)
   }
   runtime_events_.clear();
   runtime_events_.reserve(joints_.size());
+  command_snapshot_.resize(joints_.size());
+  recovery_updates_.clear();
+  recovery_updates_.reserve(joints_.size());
+  for (size_t index = 0; index < joints_.size(); ++index) {
+    command_snapshot_[index].motor_index = index;
+  }
   feedback_metrics_ = std::make_unique<AtomicFeedbackMetrics[]>(joints_.size());
   reset_metrics();
   return true;
@@ -164,7 +170,11 @@ bool RobStrideDriver::update_state()
   const auto now = std::chrono::steady_clock::now();
   bool read_failed = false;
   runtime_events_.clear();
+  recovery_updates_.clear();
   {
+    // The controller-manager path only snapshots driver state while holding state_mutex_.
+    // Transport queue operations happen after this scope, so driver and transport locks are
+    // never nested. Both vectors reserve one entry per joint during initialize().
     std::lock_guard<std::mutex> lock(state_mutex_);
     for (size_t joint_index = 0; joint_index < joints_.size(); ++joint_index) {
       auto & joint = joints_[joint_index];
@@ -187,7 +197,8 @@ bool RobStrideDriver::update_state()
         joint.feedback_status.mode, now, settings_.recovery_timeout,
         settings_.recovery_retry_interval);
       if (action == RecoveryAction::recovered) {
-        transport_->complete_recovery(joint_index);
+        recovery_updates_.push_back(
+          CanTransport::RecoveryUpdate{joint_index, std::nullopt});
         runtime_events_.push_back(
           RuntimeEvent{
             RuntimeEventKind::recovered, joint_index, kMotorModeRun, attempts_before_update});
@@ -205,11 +216,13 @@ bool RobStrideDriver::update_state()
               RuntimeEventKind::recovery_started, joint_index, joint.recovery.detected_mode,
               joint.recovery.attempts});
         }
-        transport_->queue_recovery_frame(
-          joint_index, make_enable(joint.can_id, settings_.host_id));
+        recovery_updates_.push_back(
+          CanTransport::RecoveryUpdate{
+            joint_index, make_enable(joint.can_id, settings_.host_id)});
       }
     }
   }
+  transport_->apply_recovery_updates(recovery_updates_);
   log_runtime_events();
   return !read_failed;
 }
@@ -217,28 +230,34 @@ bool RobStrideDriver::update_state()
 void RobStrideDriver::send_commands()
 {
   if (!active_) {return;}
-  std::lock_guard<std::mutex> lock(state_mutex_);
-  if (!active_) {return;}
-  for (size_t joint_index = 0; joint_index < joints_.size(); ++joint_index) {
-    const auto & joint = joints_[joint_index];
-    const double joint_position = joint.claimed.position && std::isfinite(joint.command.position) ?
-      joint.command_limits.clamp_position(joint.command.position) :
-      joint.command_limits.clamp_position(joint.state.position);
-    const double motor_position = std::isfinite(joint_position) ?
-      joint.direction * (joint_position - joint.position_offset) * joint.gear_ratio : 0.0;
-    const double motor_velocity = joint.claimed.velocity && std::isfinite(joint.command.velocity) ?
-      joint.direction * joint.command_limits.clamp_velocity(joint.command.velocity) *
-      joint.gear_ratio : 0.0;
-    const double motor_effort =
-      joint.claimed.effort && std::isfinite(joint.command.effort) ?
-      joint.joint_to_motor_effort(joint.command_limits.clamp_effort(joint.command.effort)) :
-      0.0;
-    const double kp = joint.claimed.position ? joint.kp : 0.0;
-    const double kd = (joint.claimed.position || joint.claimed.velocity) ? joint.kd : 0.0;
-    transport_->queue_motion_frame(
-      joint_index, make_motion_command(
-        joint.can_id, joint.limits, motor_position, motor_velocity, motor_effort, kp, kd));
+  {
+    // command_snapshot_ is fixed-size after initialize(). The ros2_control write callback is its
+    // sole producer; state_mutex_ is released before the batch takes the transport queue lock.
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    if (!active_) {return;}
+    for (size_t joint_index = 0; joint_index < joints_.size(); ++joint_index) {
+      const auto & joint = joints_[joint_index];
+      const double joint_position =
+        joint.claimed.position && std::isfinite(joint.command.position) ?
+        joint.command_limits.clamp_position(joint.command.position) :
+        joint.command_limits.clamp_position(joint.state.position);
+      const double motor_position = std::isfinite(joint_position) ?
+        joint.direction * (joint_position - joint.position_offset) * joint.gear_ratio : 0.0;
+      const double motor_velocity =
+        joint.claimed.velocity && std::isfinite(joint.command.velocity) ?
+        joint.direction * joint.command_limits.clamp_velocity(joint.command.velocity) *
+        joint.gear_ratio : 0.0;
+      const double motor_effort =
+        joint.claimed.effort && std::isfinite(joint.command.effort) ?
+        joint.joint_to_motor_effort(joint.command_limits.clamp_effort(joint.command.effort)) :
+        0.0;
+      const double kp = joint.claimed.position ? joint.kp : 0.0;
+      const double kd = (joint.claimed.position || joint.claimed.velocity) ? joint.kd : 0.0;
+      command_snapshot_[joint_index].frame = make_motion_command(
+        joint.can_id, joint.limits, motor_position, motor_velocity, motor_effort, kp, kd);
+    }
   }
+  transport_->queue_motion_frames(command_snapshot_);
 }
 
 std::vector<ClaimedInterfaces> RobStrideDriver::command_modes() const

@@ -41,6 +41,18 @@ public:
   using FrameSink = std::function<void(const Frame &)>;
   using MetricsProvider = std::function<DriverMetrics()>;
 
+  struct MotorFrame
+  {
+    size_t motor_index{0};
+    Frame frame{};
+  };
+
+  struct RecoveryUpdate
+  {
+    size_t motor_index{0};
+    std::optional<Frame> frame;
+  };
+
   CanTransport(
       CanTransportOptions options, ReceiveCallback receive_callback,
       FrameSink frame_sink = FrameSink{}, MetricsProvider metrics_provider = MetricsProvider{});
@@ -55,8 +67,10 @@ public:
 
   void send_transaction(const Frame & frame);
   void queue_motion_frame(size_t motor_index, const Frame & frame);
+  void queue_motion_frames(const std::vector<MotorFrame> & frames);
   void queue_recovery_frame(size_t motor_index, const Frame & frame);
   void complete_recovery(size_t motor_index);
+  void apply_recovery_updates(const std::vector<RecoveryUpdate> & updates);
   void enable_active_commands();
   void disable_active_commands();
   bool wait_for_transaction_acknowledgements(std::chrono::milliseconds timeout) const;
