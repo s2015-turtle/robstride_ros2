@@ -53,10 +53,17 @@ if(BUILD_TESTING)
   ament_add_gtest(test_joint_data test/test_joint_data.cpp)
   target_link_libraries(test_joint_data ${PROJECT_NAME})
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_library(robstride_vcan_test_support STATIC
+      test/support/fake_robstride_motor.cpp
+      test/support/vcan_socket.cpp
+    )
+    target_include_directories(robstride_vcan_test_support PUBLIC test/support)
+    target_link_libraries(robstride_vcan_test_support PUBLIC ${PROJECT_NAME} Threads::Threads)
+
     add_executable(test_vcan_transport_integration test/test_vcan_transport_integration.cpp)
-    target_link_libraries(test_vcan_transport_integration ${PROJECT_NAME})
+    target_link_libraries(test_vcan_transport_integration robstride_vcan_test_support)
     add_executable(test_vcan_fake_motor_integration test/test_vcan_fake_motor_integration.cpp)
-    target_link_libraries(test_vcan_fake_motor_integration ${PROJECT_NAME})
+    target_link_libraries(test_vcan_fake_motor_integration robstride_vcan_test_support)
   endif()
 endif()
 
