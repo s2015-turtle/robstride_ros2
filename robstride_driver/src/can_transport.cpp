@@ -1,17 +1,29 @@
 #include "robstride_driver/can_transport.hpp"
 
 #include <algorithm>
+#include <iomanip>
+#include <sstream>
 #include <stdexcept>
 #include <utility>
 
 namespace robstride_driver
 {
+namespace
+{
+int64_t steady_now_ns() noexcept
+{
+  return std::chrono::duration_cast<std::chrono::nanoseconds>(
+    std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+}  // namespace
 
 CanTransport::CanTransport(
-  CanTransportOptions options, ReceiveCallback receive_callback, FrameSink frame_sink)
+  CanTransportOptions options, ReceiveCallback receive_callback, FrameSink frame_sink,
+  MetricsProvider metrics_provider)
 : options_(std::move(options)),
   receive_callback_(std::move(receive_callback)),
   frame_sink_(std::move(frame_sink)),
+  metrics_provider_(std::move(metrics_provider)),
   recovery_active_(std::make_unique<std::atomic<bool>[]>(options_.motor_count))
 {
   if (options_.node_name.empty()) {throw std::invalid_argument("node_name must not be empty");}
@@ -33,6 +45,7 @@ CanTransport::~CanTransport() noexcept
 void CanTransport::start()
 {
   if (running_) {return;}
+  reset_metrics();
 
   if (!frame_sink_) {
     node_ = std::make_shared<rclcpp::Node>(options_.node_name);
@@ -46,6 +59,12 @@ void CanTransport::start()
     publisher_ = node_->create_publisher<can_msgs::msg::Frame>(options_.transmit_topic, qos);
     receive_subscription_ = node_->create_subscription<can_msgs::msg::Frame>(
       options_.receive_topic, receive_qos, receive_callback_);
+    if (metrics_provider_) {
+      diagnostics_publisher_ =
+        node_->create_publisher<diagnostic_msgs::msg::DiagnosticArray>("/diagnostics", 10);
+      diagnostics_timer_ = node_->create_wall_timer(
+        std::chrono::seconds(1), [this]() {publish_diagnostics();});
+    }
     executor_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
     executor_->add_node(node_);
   }
@@ -79,6 +98,8 @@ void CanTransport::stop()
   if (executor_thread_.joinable()) {executor_thread_.join();}
 
   receive_subscription_.reset();
+  diagnostics_timer_.reset();
+  diagnostics_publisher_.reset();
   {
     std::lock_guard<std::mutex> lock(publisher_mutex_);
     publisher_.reset();
@@ -121,6 +142,7 @@ void CanTransport::queue_motion_frame(size_t motor_index, const Frame & frame)
   {
     std::lock_guard<std::mutex> lock(pending_mutex_);
     if (!active_commands_enabled_ || generation != active_generation_) {return;}
+    if (pending_motion_frames_[motor_index]) {++motion_frames_coalesced_;}
     pending_motion_frames_[motor_index] = ActiveFrame{frame, motor_index, generation};
   }
   pending_condition_.notify_one();
@@ -196,7 +218,7 @@ bool CanTransport::wait_for_transaction_acknowledgements(
 void CanTransport::publish_transaction(const Frame & frame)
 {
   std::lock_guard<std::mutex> lock(publisher_mutex_);
-  publish_unlocked(frame);
+  if (publish_unlocked(frame)) {++transaction_frames_transmitted_;}
 }
 
 void CanTransport::publish_active(const ActiveFrame & frame, bool is_recovery)
@@ -205,16 +227,21 @@ void CanTransport::publish_active(const ActiveFrame & frame, bool is_recovery)
   if (!active_commands_enabled_ || frame.generation != active_generation_) {return;}
   const bool recovering = recovery_active_[frame.motor_index];
   if ((is_recovery && !recovering) || (!is_recovery && recovering)) {return;}
-  publish_unlocked(frame.frame);
+  if (!publish_unlocked(frame.frame)) {return;}
+  if (is_recovery) {
+    ++recovery_frames_transmitted_;
+  } else {
+    ++motion_frames_transmitted_;
+  }
 }
 
-void CanTransport::publish_unlocked(const Frame & source)
+bool CanTransport::publish_unlocked(const Frame & source)
 {
   if (frame_sink_) {
     frame_sink_(source);
-    return;
+    return true;
   }
-  if (!publisher_) {return;}
+  if (!publisher_) {return false;}
 
   can_msgs::msg::Frame message;
   message.header.stamp = node_->now();
@@ -225,6 +252,90 @@ void CanTransport::publish_unlocked(const Frame & source)
   message.dlc = 8;
   message.data = source.data;
   publisher_->publish(message);
+  return true;
+}
+
+CanTransportMetrics CanTransport::metrics() const noexcept
+{
+  CanTransportMetrics snapshot;
+  snapshot.motion_frames_transmitted = motion_frames_transmitted_.load();
+  snapshot.recovery_frames_transmitted = recovery_frames_transmitted_.load();
+  snapshot.transaction_frames_transmitted = transaction_frames_transmitted_.load();
+  snapshot.motion_frames_coalesced = motion_frames_coalesced_.load();
+  const int64_t started_at = metrics_started_at_ns_.load();
+  snapshot.observation_period = std::chrono::nanoseconds(
+    started_at > 0 ? std::max<int64_t>(0, steady_now_ns() - started_at) : 0);
+  return snapshot;
+}
+
+void CanTransport::reset_metrics() noexcept
+{
+  motion_frames_transmitted_ = 0;
+  recovery_frames_transmitted_ = 0;
+  transaction_frames_transmitted_ = 0;
+  motion_frames_coalesced_ = 0;
+  metrics_started_at_ns_ = steady_now_ns();
+}
+
+void CanTransport::publish_diagnostics()
+{
+  if (!diagnostics_publisher_ || !metrics_provider_) {return;}
+  const auto snapshot = metrics_provider_();
+  diagnostic_msgs::msg::DiagnosticArray message;
+  message.header.stamp = node_->now();
+
+  auto value = [](const std::string & key, const auto & data) {
+      diagnostic_msgs::msg::KeyValue item;
+      item.key = key;
+      std::ostringstream stream;
+      stream << data;
+      item.value = stream.str();
+      return item;
+    };
+  auto decimal = [](const std::string & key, double data) {
+      diagnostic_msgs::msg::KeyValue item;
+      item.key = key;
+      std::ostringstream stream;
+      stream << std::fixed << std::setprecision(2) << data;
+      item.value = stream.str();
+      return item;
+    };
+
+  diagnostic_msgs::msg::DiagnosticStatus transport_status;
+  transport_status.level = diagnostic_msgs::msg::DiagnosticStatus::OK;
+  transport_status.name = "robstride_driver/CAN traffic";
+  transport_status.hardware_id = options_.transmit_topic + " -> " + options_.receive_topic;
+  transport_status.message = "Traffic counters are active";
+  transport_status.values = {
+    value("tx_frames", snapshot.transport.transmitted_frames()),
+    decimal("tx_rate_hz", snapshot.transport.transmit_rate_hz()),
+    value("tx_motion_frames", snapshot.transport.motion_frames_transmitted),
+    value("tx_recovery_frames", snapshot.transport.recovery_frames_transmitted),
+    value("tx_transaction_frames", snapshot.transport.transaction_frames_transmitted),
+    value("coalesced_motion_frames", snapshot.transport.motion_frames_coalesced),
+    value("rx_robstride_frames", snapshot.received_frames()),
+    decimal("rx_robstride_rate_hz", snapshot.receive_rate_hz())};
+  message.status.push_back(std::move(transport_status));
+
+  for (const auto & motor : snapshot.motors) {
+    diagnostic_msgs::msg::DiagnosticStatus status;
+    status.level = motor.feedback_received ?
+      diagnostic_msgs::msg::DiagnosticStatus::OK : diagnostic_msgs::msg::DiagnosticStatus::WARN;
+    status.name = "robstride_driver/" + motor.joint_name;
+    status.hardware_id = "CAN ID " + std::to_string(motor.can_id);
+    status.message = motor.feedback_received ? "Feedback received" : "No feedback received";
+    status.values = {
+      value("feedback_frames", motor.feedback_frames_received),
+      decimal("feedback_rate_hz", motor.feedback_rate_hz),
+      decimal(
+        "current_feedback_age_ms",
+        std::chrono::duration<double, std::milli>(motor.current_feedback_age).count()),
+      decimal(
+        "maximum_feedback_age_ms",
+        std::chrono::duration<double, std::milli>(motor.maximum_feedback_age).count())};
+    message.status.push_back(std::move(status));
+  }
+  diagnostics_publisher_->publish(message);
 }
 
 void CanTransport::transmit_pending_frames()

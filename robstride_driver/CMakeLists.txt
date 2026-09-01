@@ -8,12 +8,14 @@ add_compile_options(-Wall -Wextra -Wpedantic)
 
 find_package(ament_cmake REQUIRED)
 find_package(can_msgs REQUIRED)
+find_package(diagnostic_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(Threads REQUIRED)
 
 add_library(${PROJECT_NAME} SHARED
   src/can_transport.cpp
   src/driver.cpp
+  src/metrics.cpp
   src/protocol.cpp
 )
 add_library(${PROJECT_NAME}::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
@@ -22,11 +24,12 @@ target_include_directories(${PROJECT_NAME} PUBLIC
   $<INSTALL_INTERFACE:include>
 )
 if(COMMAND ament_target_dependencies)
-  ament_target_dependencies(${PROJECT_NAME} can_msgs rclcpp)
+  ament_target_dependencies(${PROJECT_NAME} can_msgs diagnostic_msgs rclcpp)
   target_link_libraries(${PROJECT_NAME} Threads::Threads)
 else()
   target_link_libraries(${PROJECT_NAME} PUBLIC
     ${can_msgs_TARGETS}
+    ${diagnostic_msgs_TARGETS}
     rclcpp::rclcpp
   )
   target_link_libraries(${PROJECT_NAME} PRIVATE Threads::Threads)
@@ -49,9 +52,13 @@ if(BUILD_TESTING)
   target_link_libraries(test_can_transport ${PROJECT_NAME})
   ament_add_gtest(test_joint_data test/test_joint_data.cpp)
   target_link_libraries(test_joint_data ${PROJECT_NAME})
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_executable(test_vcan_transport_integration test/test_vcan_transport_integration.cpp)
+    target_link_libraries(test_vcan_transport_integration ${PROJECT_NAME})
+  endif()
 endif()
 
 ament_export_include_directories(include)
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET NAMESPACE ${PROJECT_NAME}::)
-ament_export_dependencies(can_msgs rclcpp)
+ament_export_dependencies(can_msgs diagnostic_msgs rclcpp)
 ament_package()

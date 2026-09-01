@@ -16,6 +16,14 @@ Public headers are installed under `robstride_driver/` and cover:
 - per-model and per-joint limits;
 - CAN topic transport;
 - motor activation, stop, watchdog, and feedback handling.
+- lock-free snapshots of traffic counters and per-motor feedback timing.
+
+`RobStrideDriver::metrics()` returns the measured transmit categories,
+latest-command-wins motion-command replacement count, recognized receive
+counts, and per-motor feedback rate and age. The snapshot reads atomic counters
+and does not acquire the transport worker or driver state mutex. When the normal ROS
+topic transport is used, the same information is published once per second as
+standard diagnostics on `/diagnostics`.
 
 Most users should integrate this library through the
 [`robstride_ros2_control`](https://github.com/s2015-turtle/robstride_ros2/tree/main/robstride_ros2_control)

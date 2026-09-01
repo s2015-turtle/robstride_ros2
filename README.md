@@ -21,6 +21,7 @@ repository. A Japanese README is available as
 - Startup parameter readback and motor-enable confirmation
 - Feedback timeout handling and repeated stop commands during shutdown
 - A nonzero motor-side CAN watchdog configured on every activation
+- CAN traffic, command-coalescing, and per-motor feedback diagnostics
 
 ## Package structure
 
@@ -300,6 +301,37 @@ ros2 topic pub --rate 20 \
 
 Use the same procedure with `robstride_effort_controller` for effort commands.
 
+## CAN traffic diagnostics
+
+While the Hardware Component is configured, the driver publishes standard
+`diagnostic_msgs/msg/DiagnosticArray` messages on `/diagnostics` once per
+second:
+
+```bash
+ros2 topic echo /diagnostics
+```
+
+The `robstride_driver/CAN traffic` entry reports transmitted motion, recovery,
+and lifecycle/parameter transaction frames separately. It also reports the
+number of motion commands replaced before transmission by the
+latest-command-wins queue. Each `robstride_driver/<joint_name>` entry reports
+the recognized feedback count, average feedback rate, current feedback age,
+and maximum observed feedback age.
+
+The rates are averages since the CAN transport was opened. They are measured
+at the driver boundary, not inferred from the controller-manager update rate.
+In particular, a requested controller rate is not necessarily the physical
+per-motor CAN rate: when commands arrive faster than the transport sends them,
+the pending command for that motor is replaced and the coalesced counter
+increases.
+
+For a multi-motor system, begin with a conservative update rate and observe the
+diagnostics under representative load. A rising coalesced count, falling
+per-motor feedback rate, or increasing feedback age indicates that the update
+rate or other CAN traffic should be reduced. These values do not claim total
+bus utilization: CAN bit stuffing, bitrate, motor response behavior, and
+unrelated traffic are outside the driver's measured counters.
+
 ## Multiple motors
 
 Give every motor a unique joint name and CAN ID, then group joints in controller
@@ -339,6 +371,11 @@ On deactivation, shutdown, error, or destruction while active, the component
 sends a zero command followed by a stop command to every motor. If the ROS
 transport cannot deliver those commands, the configured motor-side CAN
 watchdog is the final fallback.
+
+CI additionally exercises both directions of the topic transport through
+`ros2_socketcan` and a Linux `vcan` interface. This verifies frame IDs and
+payloads without requiring a physical CAN adapter or motor; it does not replace
+hardware-in-the-loop testing of timing or motor behavior.
 
 ## License
 

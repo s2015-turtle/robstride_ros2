@@ -15,6 +15,7 @@
 #include <rclcpp/logger.hpp>
 
 #include "robstride_driver/config.hpp"
+#include "robstride_driver/metrics.hpp"
 
 namespace robstride_driver
 {
@@ -40,6 +41,7 @@ public:
   std::vector<ClaimedInterfaces> command_modes() const;
   std::vector<bool> feedback_received() const;
   bool apply_command_modes(const std::vector<ClaimedInterfaces> & modes);
+  DriverMetrics metrics() const;
 
 private:
   enum class RuntimeEventKind
@@ -63,6 +65,15 @@ private:
   bool enable_and_confirm_all();
   void disable_all();
   void log_runtime_events();
+  void reset_metrics();
+  void record_feedback(size_t joint_index, std::chrono::steady_clock::time_point now) noexcept;
+
+  struct AtomicFeedbackMetrics
+  {
+    std::atomic<uint64_t> count{0};
+    std::atomic<int64_t> last_received_at_ns{0};
+    std::atomic<int64_t> maximum_gap_ns{0};
+  };
 
   rclcpp::Logger logger_;
   DriverSettings settings_{};
@@ -75,6 +86,10 @@ private:
   std::chrono::steady_clock::time_point activated_at_{};
   std::shared_ptr<rclcpp::Clock> log_clock_;
   std::unique_ptr<CanTransport> transport_;
+  std::atomic<uint64_t> feedback_frames_received_{0};
+  std::atomic<uint64_t> parameter_frames_received_{0};
+  std::atomic<int64_t> metrics_started_at_ns_{0};
+  std::unique_ptr<AtomicFeedbackMetrics[]> feedback_metrics_;
 };
 
 }  // namespace robstride_driver
