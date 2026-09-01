@@ -55,6 +55,8 @@ if(BUILD_TESTING)
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     add_executable(test_vcan_transport_integration test/test_vcan_transport_integration.cpp)
     target_link_libraries(test_vcan_transport_integration ${PROJECT_NAME})
+    add_executable(test_vcan_fake_motor_integration test/test_vcan_fake_motor_integration.cpp)
+    target_link_libraries(test_vcan_fake_motor_integration ${PROJECT_NAME})
   endif()
 endif()
 
