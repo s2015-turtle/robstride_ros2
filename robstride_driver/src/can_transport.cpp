@@ -137,40 +137,64 @@ void CanTransport::send_transaction(const Frame & frame)
 
 void CanTransport::queue_motion_frame(size_t motor_index, const Frame & frame)
 {
-  if (!active_commands_enabled_ || motor_index >= options_.motor_count) {return;}
+  queue_motion_frames({MotorFrame{motor_index, frame}});
+}
+
+void CanTransport::queue_motion_frames(const std::vector<MotorFrame> & frames)
+{
+  if (!active_commands_enabled_ || frames.empty()) {return;}
   const uint64_t generation = active_generation_;
   {
     std::lock_guard<std::mutex> lock(pending_mutex_);
     if (!active_commands_enabled_ || generation != active_generation_) {return;}
-    if (pending_motion_frames_[motor_index]) {++motion_frames_coalesced_;}
-    pending_motion_frames_[motor_index] = ActiveFrame{frame, motor_index, generation};
+    for (const auto & update : frames) {
+      if (update.motor_index >= options_.motor_count) {continue;}
+      if (pending_motion_frames_[update.motor_index]) {++motion_frames_coalesced_;}
+      pending_motion_frames_[update.motor_index] =
+        ActiveFrame{update.frame, update.motor_index, generation};
+    }
   }
   pending_condition_.notify_one();
 }
 
 void CanTransport::queue_recovery_frame(size_t motor_index, const Frame & frame)
 {
-  if (!active_commands_enabled_ || motor_index >= options_.motor_count) {return;}
-  recovery_active_[motor_index] = true;
-  const uint64_t generation = active_generation_;
-  {
-    std::lock_guard<std::mutex> lock(pending_mutex_);
-    if (!active_commands_enabled_ || generation != active_generation_) {
-      recovery_active_[motor_index] = false;
-      return;
-    }
-    pending_recovery_frames_[motor_index] = ActiveFrame{frame, motor_index, generation};
-  }
-  pending_condition_.notify_one();
+  apply_recovery_updates({RecoveryUpdate{motor_index, frame}});
 }
 
 void CanTransport::complete_recovery(size_t motor_index)
 {
-  if (motor_index >= options_.motor_count) {return;}
-  recovery_active_[motor_index] = false;
+  apply_recovery_updates({RecoveryUpdate{motor_index, std::nullopt}});
+}
+
+void CanTransport::apply_recovery_updates(const std::vector<RecoveryUpdate> & updates)
+{
+  if (updates.empty()) {return;}
+  const uint64_t generation = active_generation_;
+  for (const auto & update : updates) {
+    if (update.motor_index < options_.motor_count) {
+      recovery_active_[update.motor_index] = update.frame.has_value();
+    }
+  }
   {
     std::lock_guard<std::mutex> lock(pending_mutex_);
-    pending_recovery_frames_[motor_index].reset();
+    if (!active_commands_enabled_ || generation != active_generation_) {
+      for (const auto & update : updates) {
+        if (update.motor_index < options_.motor_count) {
+          recovery_active_[update.motor_index] = false;
+        }
+      }
+      return;
+    }
+    for (const auto & update : updates) {
+      if (update.motor_index >= options_.motor_count) {continue;}
+      if (update.frame) {
+        pending_recovery_frames_[update.motor_index] =
+          ActiveFrame{*update.frame, update.motor_index, generation};
+      } else {
+        pending_recovery_frames_[update.motor_index].reset();
+      }
+    }
   }
   pending_condition_.notify_one();
 }

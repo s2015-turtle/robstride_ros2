@@ -214,6 +214,67 @@ TEST(CanTransport, ReplacesAnUnsentMotionFrameWithTheLatestValue)
   transport.stop();
 }
 
+TEST(CanTransport, CoalescesAMultiMotorCommandBatch)
+{
+  auto capture = std::make_shared<CaptureState>();
+  capture->blocking_id = 0x40;
+  rs::CanTransport transport(valid_options(3), kReceiveCallback, sink_for(capture));
+  CaptureReleaseGuard release_guard(capture);
+  transport.start();
+  transport.enable_active_commands();
+
+  transport.send_transaction(rs::Frame{0x40, {}});
+  ASSERT_TRUE(capture->wait_until_blocked());
+  transport.queue_motion_frames({
+    {0, rs::Frame{0x10, {}}},
+    {1, rs::Frame{0x11, {}}},
+    {2, rs::Frame{0x12, {}}}});
+  transport.queue_motion_frames({
+    {0, rs::Frame{0x20, {}}},
+    {1, rs::Frame{0x21, {}}},
+    {2, rs::Frame{0x22, {}}}});
+  capture->release();
+
+  ASSERT_TRUE(capture->wait_for_size(4));
+  const auto frames = capture->snapshot();
+  ASSERT_EQ(frames.size(), 4u);
+  EXPECT_EQ(frames[0].id, 0x40u);
+  EXPECT_EQ(frames[1].id, 0x20u);
+  EXPECT_EQ(frames[2].id, 0x21u);
+  EXPECT_EQ(frames[3].id, 0x22u);
+  ASSERT_TRUE(wait_for_metric([&transport]() {
+    return transport.metrics().motion_frames_transmitted == 3;
+  }));
+  EXPECT_EQ(transport.metrics().motion_frames_coalesced, 3u);
+  transport.stop();
+}
+
+TEST(CanTransport, AppliesMultiMotorRecoveryUpdatesAsOneBatch)
+{
+  auto capture = std::make_shared<CaptureState>();
+  rs::CanTransport transport(valid_options(2), kReceiveCallback, sink_for(capture));
+  transport.start();
+  transport.enable_active_commands();
+
+  transport.apply_recovery_updates({
+    {0, rs::Frame{0x30, {}}},
+    {1, rs::Frame{0x31, {}}}});
+  transport.queue_motion_frames({
+    {0, rs::Frame{0x10, {}}},
+    {1, rs::Frame{0x11, {}}}});
+  ASSERT_TRUE(capture->wait_for_size(2));
+  EXPECT_EQ(capture->snapshot()[0].id, 0x30u);
+  EXPECT_EQ(capture->snapshot()[1].id, 0x31u);
+
+  transport.apply_recovery_updates({
+    {0, std::nullopt},
+    {1, std::nullopt}});
+  ASSERT_TRUE(capture->wait_for_size(4));
+  EXPECT_EQ(capture->snapshot()[2].id, 0x10u);
+  EXPECT_EQ(capture->snapshot()[3].id, 0x11u);
+  transport.stop();
+}
+
 TEST(CanTransport, RejectsExtractedFramesFromAnOlderActivation)
 {
   auto capture = std::make_shared<CaptureState>();
@@ -265,4 +326,31 @@ TEST(CanTransport, DrainsTransactionsWhenStopped)
   ASSERT_EQ(frames.size(), 2u);
   EXPECT_EQ(frames[0].id, 0x20u);
   EXPECT_EQ(frames[1].id, 0x21u);
+}
+
+TEST(CanTransport, StopsWhileBatchesAreBeingProduced)
+{
+  auto capture = std::make_shared<CaptureState>();
+  rs::CanTransport transport(valid_options(2), kReceiveCallback, sink_for(capture));
+  transport.start();
+  transport.enable_active_commands();
+
+  auto producer = std::async(std::launch::async, [&transport]() {
+      for (uint32_t sequence = 0; sequence < 200; ++sequence) {
+        transport.queue_motion_frames({
+          {0, rs::Frame{0x100 + sequence, {}}},
+          {1, rs::Frame{0x200 + sequence, {}}}});
+        if (sequence % 4 == 0) {
+          transport.apply_recovery_updates({{0, rs::Frame{0x300 + sequence, {}}}});
+        } else if (sequence % 4 == 1) {
+          transport.apply_recovery_updates({{0, std::nullopt}});
+        }
+      }
+    });
+  auto stop = std::async(std::launch::async, [&transport]() {transport.stop();});
+
+  ASSERT_EQ(producer.wait_for(5s), std::future_status::ready);
+  producer.get();
+  ASSERT_EQ(stop.wait_for(5s), std::future_status::ready);
+  stop.get();
 }
