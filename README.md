@@ -373,9 +373,11 @@ transport cannot deliver those commands, the configured motor-side CAN
 watchdog is the final fallback.
 
 CI additionally exercises both directions of the topic transport through
-`ros2_socketcan` and a Linux `vcan` interface. This verifies frame IDs and
-payloads without requiring a physical CAN adapter or motor; it does not replace
-hardware-in-the-loop testing of timing or motor behavior.
+`ros2_socketcan` and a Linux `vcan` interface. A simulated RobStride motor on
+that bus verifies startup parameter confirmation, enable and motion feedback,
+automatic Run-mode recovery, feedback timeout handling, and shutdown when stop
+confirmation is missing. These tests do not replace hardware-in-the-loop
+testing of timing or physical motor behavior.
 
 ## License
 

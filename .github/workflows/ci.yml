@@ -159,7 +159,7 @@ jobs:
             --packages-select robstride_driver \
             --event-handlers console_cohesion+
 
-      - name: Exercise both CAN directions
+      - name: Exercise transport and fake motor lifecycle
         shell: bash
         run: |
           source /opt/ros/jazzy/setup.bash
@@ -188,6 +188,12 @@ jobs:
 
           timeout --signal=TERM 20s \
             build/robstride_driver/test_vcan_transport_integration || {
+            cat /tmp/robstride_socketcan.log
+            exit 1
+          }
+
+          timeout --signal=TERM 30s \
+            build/robstride_driver/test_vcan_fake_motor_integration || {
             cat /tmp/robstride_socketcan.log
             exit 1
           }

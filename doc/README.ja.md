@@ -310,9 +310,11 @@ ros2 topic pub --rate 20 \
 
 deactivate、shutdown、error、またはactive中のdestructionでは、すべてのモーターへゼロ指令に続いて停止指令を送ります。ROS transportが指令を配送できなかった場合は、設定済みのmotor側CAN watchdogが最終的な停止手段になります。
 
-CIではLinuxの`vcan` interfaceと`ros2_socketcan`を使い、topic transportの送受信を
-実frame IDとpayloadまで検証します。物理CAN adapterやモーターを必要としませんが、
-実機のtimingやモーター動作を確認するhardware-in-the-loop testの代替ではありません。
+CIではLinuxの`vcan` interfaceと`ros2_socketcan`を使い、仮想RobStrideモーターとの
+送受信を実frame IDとpayloadまで検証します。起動時parameter確認、enable、指令と
+feedback、Run mode自動復帰、feedback timeout、停止確認が得られない場合のshutdownを
+確認します。物理CAN adapterやモーターを必要としませんが、実機のtimingやモーター
+動作を確認するhardware-in-the-loop testの代替ではありません。
 
 ## License
 
