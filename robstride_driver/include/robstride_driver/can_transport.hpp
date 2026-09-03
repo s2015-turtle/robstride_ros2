@@ -34,12 +34,28 @@ struct CanTransportOptions
   size_t receive_qos_depth{32};
 };
 
+enum class CanTransportHealthState
+{
+  healthy,
+  bridge_unavailable,
+  transmit_stalled,
+  worker_stopped,
+};
+
+struct CanTransportHealth
+{
+  CanTransportHealthState state{CanTransportHealthState::healthy};
+  std::chrono::nanoseconds duration{0};
+  bool persistent{false};
+};
+
 class CanTransport
 {
 public:
   using ReceiveCallback = std::function<void(can_msgs::msg::Frame::ConstSharedPtr)>;
   using FrameSink = std::function<void(const Frame &)>;
   using MetricsProvider = std::function<DriverMetrics()>;
+  using EndpointProbe = std::function<bool()>;
 
   struct MotorFrame
   {
@@ -55,7 +71,8 @@ public:
 
   CanTransport(
       CanTransportOptions options, ReceiveCallback receive_callback,
-      FrameSink frame_sink = FrameSink{}, MetricsProvider metrics_provider = MetricsProvider{});
+      FrameSink frame_sink = FrameSink{}, MetricsProvider metrics_provider = MetricsProvider{},
+      EndpointProbe endpoint_probe = EndpointProbe{});
   ~CanTransport() noexcept;
 
   CanTransport(const CanTransport &) = delete;
@@ -75,6 +92,7 @@ public:
   void disable_active_commands();
   bool wait_for_transaction_acknowledgements(std::chrono::milliseconds timeout) const;
   CanTransportMetrics metrics() const noexcept;
+  CanTransportHealth health(std::chrono::milliseconds failure_timeout) const noexcept;
 
 private:
   struct ActiveFrame
@@ -92,11 +110,13 @@ private:
   bool has_sendable_active_frame() const;
   void reset_metrics() noexcept;
   void publish_diagnostics();
+  void update_endpoint_status(bool available) const noexcept;
 
   CanTransportOptions options_;
   ReceiveCallback receive_callback_;
   FrameSink frame_sink_;
   MetricsProvider metrics_provider_;
+  EndpointProbe endpoint_probe_;
   std::deque<Frame> pending_transactions_;
   std::vector<std::optional<ActiveFrame>> pending_motion_frames_;
   std::vector<std::optional<ActiveFrame>> pending_recovery_frames_;
@@ -107,6 +127,7 @@ private:
   mutable std::condition_variable pending_condition_;
   std::thread worker_thread_;
   std::atomic<bool> running_{false};
+  std::atomic<bool> worker_failed_{false};
   std::atomic<bool> active_commands_enabled_{false};
   std::atomic<uint64_t> active_generation_{0};
   size_t transactions_in_flight_{0};
@@ -116,6 +137,9 @@ private:
   std::atomic<uint64_t> transaction_frames_transmitted_{0};
   std::atomic<uint64_t> motion_frames_coalesced_{0};
   std::atomic<int64_t> metrics_started_at_ns_{0};
+  mutable std::atomic<bool> bridge_available_{false};
+  mutable std::atomic<int64_t> bridge_unavailable_since_ns_{0};
+  std::atomic<int64_t> active_work_progress_ns_{0};
 
   rclcpp::Node::SharedPtr node_;
   rclcpp::Publisher<can_msgs::msg::Frame>::SharedPtr publisher_;

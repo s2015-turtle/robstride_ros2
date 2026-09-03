@@ -257,6 +257,8 @@ DriverConfiguration parse_driver_configuration(const hardware_interface::Hardwar
     std::stoi(hardware_parameter_or(info, "feedback_timeout_ms", "3000")));
   settings.fail_on_feedback_timeout = parse_bool(
     hardware_parameter_or(info, "fail_on_feedback_timeout", "true"));
+  settings.transmit_failure_timeout = std::chrono::milliseconds(
+    std::stoi(hardware_parameter_or(info, "transmit_failure_timeout_ms", "1000")));
   settings.recovery_timeout = std::chrono::milliseconds(
     std::stoi(hardware_parameter_or(info, "run_mode_recovery_timeout_ms", "500")));
   settings.recovery_retry_interval = std::chrono::milliseconds(
@@ -278,11 +280,13 @@ DriverConfiguration parse_driver_configuration(const hardware_interface::Hardwar
   settings.startup_retries = std::stoi(hardware_parameter_or(info, "startup_retries", "3"));
 
   if (settings.transport.receive_qos_depth == 0 || settings.feedback_timeout.count() <= 0 ||
+    settings.transmit_failure_timeout.count() <= 0 ||
     settings.recovery_timeout.count() <= 0 || settings.recovery_retry_interval.count() <= 0 ||
     settings.recovery_retry_interval > settings.recovery_timeout)
   {
     throw std::runtime_error(
-            "CAN QoS depth, feedback timeout, and Run-mode recovery timings must be positive; "
+            "CAN QoS depth, feedback and transmit failure timeouts, and Run-mode recovery "
+            "timings must be positive; "
             "recovery retry interval must not exceed its timeout");
   }
   if (settings.stop_repetitions <= 0 || settings.stop_interval.count() < 0 ||

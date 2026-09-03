@@ -20,6 +20,7 @@ repository. A Japanese README is available as
 - Motor feedback for position, velocity, torque, temperature, and faults
 - Startup parameter readback and motor-enable confirmation
 - Feedback timeout handling and repeated stop commands during shutdown
+- Persistent transmit failure propagation to the `ros2_control` lifecycle
 - A nonzero motor-side CAN watchdog configured on every activation
 - CAN traffic, command-coalescing, and per-motor feedback diagnostics
 
@@ -155,6 +156,7 @@ description.
 | `can_rx_qos_depth` | `32` | Reliable, volatile feedback QoS depth; increase for large motor groups |
 | `feedback_timeout_ms` | `3000` | Maximum time without motor feedback before returning ERROR |
 | `fail_on_feedback_timeout` | `true` | Stop the hardware when feedback times out |
+| `transmit_failure_timeout_ms` | `1000` | Grace period before a missing transmit endpoint or stalled sender returns ERROR |
 | `run_mode_recovery_timeout_ms` | `500` | Time allowed for an active motor to recover to Run mode before returning ERROR |
 | `run_mode_recovery_retry_interval_ms` | `100` | Minimum interval between automatic enable retries |
 | `clear_faults_on_activate` | `true` | Clear motor faults during activation |
@@ -171,6 +173,12 @@ unexpectedly leaves Run mode, the component logs a warning and attempts to
 enable it again. Commands resume after Run mode is confirmed. If recovery does
 not complete within `run_mode_recovery_timeout_ms`, the hardware reports an
 error and stops all motors.
+
+The transmit path is also monitored while the hardware is active. A temporary
+loss of the CAN bridge's transmit topic endpoint produces a throttled warning.
+If the endpoint remains unavailable, or the transmit worker makes no progress,
+for `transmit_failure_timeout_ms`, `write()` returns ERROR to `ros2_control`.
+An unexpectedly stopped transmit worker returns ERROR immediately.
 
 Minimal example using the default settings:
 
@@ -364,6 +372,7 @@ ros2 topic pub --rate 20 \
 |---|---|
 | `can_timeout_ticks` | The motor returns to Reset mode after host commands stop |
 | `feedback_timeout_ms` | The hardware returns ERROR after motor feedback stops |
+| `transmit_failure_timeout_ms` | Persistent transmit endpoint loss or a stalled sender returns ERROR |
 | `shutdown_stop_repetitions` | Zero commands and stop commands are repeated |
 | `shutdown_confirmation_timeout_ms` | The hardware waits for Reset mode feedback |
 
@@ -371,6 +380,14 @@ On deactivation, shutdown, error, or destruction while active, the component
 sends a zero command followed by a stop command to every motor. If the ROS
 transport cannot deliver those commands, the configured motor-side CAN
 watchdog is the final fallback.
+
+Command submission passes through several independently observable stages. A
+controller update first replaces the latest value in the driver's local queue.
+A successful ROS publication means the frame was handed to DDS while a bridge
+subscriber was present; it does not by itself prove transmission on the
+physical CAN bus or execution by the motor. Recognized motor feedback is the
+end-to-end evidence available to this driver, and `feedback_timeout_ms` detects
+its loss independently of transmit-path monitoring.
 
 CI additionally exercises both directions of the topic transport through
 `ros2_socketcan` and a Linux `vcan` interface. A simulated RobStride motor on

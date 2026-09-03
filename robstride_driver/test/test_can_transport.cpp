@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <future>
@@ -131,6 +132,117 @@ TEST(CanTransport, RejectsMissingReceiveCallback)
   EXPECT_THROW(
     rs::CanTransport(valid_options(), rs::CanTransport::ReceiveCallback{}),
     std::invalid_argument);
+}
+
+TEST(CanTransportHealth, ReportsHealthyTransportAfterPublishing)
+{
+  auto capture = std::make_shared<CaptureState>();
+  rs::CanTransport transport(valid_options(), kReceiveCallback, sink_for(capture));
+  transport.start();
+  transport.enable_active_commands();
+  transport.queue_motion_frame(0, rs::Frame{0x10, {}});
+
+  ASSERT_TRUE(capture->wait_for_size(1));
+  const auto health = transport.health(100ms);
+  EXPECT_EQ(health.state, rs::CanTransportHealthState::healthy);
+  EXPECT_FALSE(health.persistent);
+  transport.stop();
+}
+
+TEST(CanTransportHealth, DoesNotTreatAnIdleActiveTransportAsStalled)
+{
+  auto capture = std::make_shared<CaptureState>();
+  rs::CanTransport transport(valid_options(), kReceiveCallback, sink_for(capture));
+  transport.start();
+  transport.enable_active_commands();
+
+  std::this_thread::sleep_for(10ms);
+  EXPECT_EQ(transport.health(1ms).state, rs::CanTransportHealthState::healthy);
+  transport.stop();
+}
+
+TEST(CanTransportHealth, ToleratesTransientEndpointLossAndRecovers)
+{
+  auto capture = std::make_shared<CaptureState>();
+  std::atomic<bool> endpoint_available{true};
+  rs::CanTransport transport(
+    valid_options(), kReceiveCallback, sink_for(capture),
+    rs::CanTransport::MetricsProvider{}, [&endpoint_available]() {
+      return endpoint_available.load();
+    });
+  transport.start();
+  ASSERT_TRUE(transport.wait_for_endpoints(10ms));
+  transport.enable_active_commands();
+
+  endpoint_available = false;
+  transport.queue_motion_frame(0, rs::Frame{0x10, {}});
+  ASSERT_TRUE(wait_for_metric([&transport]() {
+    return transport.health(200ms).state ==
+           rs::CanTransportHealthState::bridge_unavailable;
+  }));
+  const auto unavailable = transport.health(200ms);
+  EXPECT_FALSE(unavailable.persistent);
+
+  endpoint_available = true;
+  transport.queue_motion_frame(0, rs::Frame{0x11, {}});
+  ASSERT_TRUE(capture->wait_for_size(1));
+  EXPECT_EQ(transport.health(200ms).state, rs::CanTransportHealthState::healthy);
+  transport.stop();
+}
+
+TEST(CanTransportHealth, ReportsPersistentEndpointLoss)
+{
+  auto capture = std::make_shared<CaptureState>();
+  rs::CanTransport transport(
+    valid_options(), kReceiveCallback, sink_for(capture),
+    rs::CanTransport::MetricsProvider{}, []() {return false;});
+  transport.start();
+  EXPECT_FALSE(transport.wait_for_endpoints(10ms));
+  transport.enable_active_commands();
+  transport.queue_motion_frame(0, rs::Frame{0x10, {}});
+
+  ASSERT_TRUE(wait_for_metric([&transport]() {
+    return transport.health(10ms).persistent;
+  }));
+  const auto health = transport.health(10ms);
+  EXPECT_EQ(health.state, rs::CanTransportHealthState::bridge_unavailable);
+  EXPECT_TRUE(health.persistent);
+  transport.stop();
+}
+
+TEST(CanTransportHealth, ReportsAStalledTransmitWorker)
+{
+  auto capture = std::make_shared<CaptureState>();
+  capture->blocking_id = 0x10;
+  rs::CanTransport transport(valid_options(), kReceiveCallback, sink_for(capture));
+  CaptureReleaseGuard release_guard(capture);
+  transport.start();
+  transport.enable_active_commands();
+  transport.queue_motion_frame(0, rs::Frame{0x10, {}});
+
+  ASSERT_TRUE(capture->wait_until_blocked());
+  ASSERT_TRUE(wait_for_metric([&transport]() {
+    return transport.health(10ms).state == rs::CanTransportHealthState::transmit_stalled;
+  }));
+  EXPECT_TRUE(transport.health(10ms).persistent);
+  capture->release();
+  transport.stop();
+}
+
+TEST(CanTransportHealth, ReportsAWorkerStoppedByAnException)
+{
+  rs::CanTransport transport(
+    valid_options(), kReceiveCallback,
+    [](const rs::Frame &) {throw std::runtime_error("simulated transmit failure");});
+  transport.start();
+  transport.enable_active_commands();
+  transport.queue_motion_frame(0, rs::Frame{0x10, {}});
+
+  ASSERT_TRUE(wait_for_metric([&transport]() {
+    return transport.health(1s).state == rs::CanTransportHealthState::worker_stopped;
+  }));
+  EXPECT_TRUE(transport.health(1s).persistent);
+  transport.stop();
 }
 
 TEST(CanTransport, HoldsMotionUntilRecoveryCompletes)

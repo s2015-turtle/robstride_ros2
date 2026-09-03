@@ -14,6 +14,7 @@ CAN frameの送受信には`can_msgs/msg/Frame` topicを使用します。core p
 - 位置、速度、トルク、温度、faultのfeedback
 - 起動時のparameter読み戻しとモーター有効化確認
 - feedback timeoutと終了時の停止指令再送
+- 継続的な送信障害を`ros2_control` lifecycleへ通知
 - activateのたびにmotor側CAN watchdogを非ゼロ値へ設定
 - CAN traffic、command coalescing、モーター別feedbackのdiagnostics
 
@@ -126,6 +127,7 @@ ros2 topic pub --rate 20 \
 | `can_rx_qos_depth` | `32` | reliable・volatileなfeedback QoS depth。多数のモーターを使う場合は増加を検討 |
 | `feedback_timeout_ms` | `3000` | feedbackを受信できない状態でERRORを返すまでの時間 |
 | `fail_on_feedback_timeout` | `true` | feedback timeout時にHardwareを停止 |
+| `transmit_failure_timeout_ms` | `1000` | 送信endpointの消失またはsender停滞をERRORにするまでの猶予時間 |
 | `run_mode_recovery_timeout_ms` | `500` | active中のモーターがRunへ復帰するまで待つ時間 |
 | `run_mode_recovery_retry_interval_ms` | `100` | 自動有効化を再試行する最小間隔 |
 | `clear_faults_on_activate` | `true` | activate時にモーターのfaultをclear |
@@ -138,6 +140,11 @@ ros2 topic pub --rate 20 \
 | `startup_retries` | `3` | 起動時のparameter設定と有効化の最大試行回数 |
 
 Hardwareがactiveの間は、各モーターの動作状態を監視します。モーターが意図せずRun以外へ移行するとWARNを出力し、自動的に再度有効化します。Runへの復帰を確認すると指令送信を再開します。`run_mode_recovery_timeout_ms`以内に復帰しない場合はHardwareがERRORを返し、すべてのモーターを停止します。
+
+active中は送信経路も監視します。CAN bridgeの送信topic endpointが一時的に消失した
+場合は、間引いたWARNを出して復帰を待ちます。endpointの消失または送信workerの停滞が
+`transmit_failure_timeout_ms`を超えると、`write()`が`ros2_control`へERRORを返します。
+送信worker自体が予期せず終了した場合は、直ちにERRORを返します。
 
 既定値を使う最小構成は次のとおりです。
 
@@ -305,10 +312,17 @@ ros2 topic pub --rate 20 \
 |---|---|
 | `can_timeout_ticks` | hostからの指令が途絶えるとモーターがReset modeへ移行 |
 | `feedback_timeout_ms` | モーターからのfeedbackが途絶えるとHardwareがERRORを返す |
+| `transmit_failure_timeout_ms` | 送信endpoint消失またはsender停滞が続くとHardwareがERRORを返す |
 | `shutdown_stop_repetitions` | ゼロ指令と停止指令を繰り返し送信 |
 | `shutdown_confirmation_timeout_ms` | Reset modeのfeedbackを待機 |
 
 deactivate、shutdown、error、またはactive中のdestructionでは、すべてのモーターへゼロ指令に続いて停止指令を送ります。ROS transportが指令を配送できなかった場合は、設定済みのmotor側CAN watchdogが最終的な停止手段になります。
+
+指令の送信には、それぞれ独立して観測できる段階があります。controllerの更新は、まず
+driver内の最新値queueを置き換えます。ROS topicのpublish成功は、bridge subscriberが
+存在する状態でframeをDDSへ渡したことを意味しますが、物理CAN busへの送信やモーターでの
+実行完了までは保証しません。本driverが得られるend-to-endの根拠は認識済みmotor feedback
+であり、その消失は送信経路とは独立して`feedback_timeout_ms`が検出します。
 
 CIではLinuxの`vcan` interfaceと`ros2_socketcan`を使い、仮想RobStrideモーターとの
 送受信を実frame IDとpayloadまで検証します。起動時parameter確認、enable、指令と

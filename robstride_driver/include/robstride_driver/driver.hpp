@@ -37,7 +37,7 @@ public:
   bool start();
   void stop() noexcept;
   bool update_state();
-  void send_commands();
+  bool send_commands();
   std::vector<ClaimedInterfaces> command_modes() const;
   std::vector<bool> feedback_received() const;
   bool apply_command_modes(const std::vector<ClaimedInterfaces> & modes);
@@ -65,6 +65,7 @@ private:
   bool enable_and_confirm_all();
   void disable_all();
   void log_runtime_events();
+  bool check_transport_health();
   void reset_metrics();
   void record_feedback(size_t joint_index, std::chrono::steady_clock::time_point now) noexcept;
 
