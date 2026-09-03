@@ -25,6 +25,13 @@ and does not acquire the transport worker or driver state mutex. When the normal
 topic transport is used, the same information is published once per second as
 standard diagnostics on `/diagnostics`.
 
+While active, the driver distinguishes temporary topic endpoint loss from a
+persistent transmit failure. Persistent endpoint loss, a stalled sender, or an
+unexpectedly stopped worker is propagated through the Hardware Component's
+`write()` result. Motor feedback timeout remains an independent end-to-end
+check because DDS publication alone cannot prove physical CAN delivery or motor
+execution.
+
 Most users should integrate this library through the
 [`robstride_ros2_control`](https://github.com/s2015-turtle/robstride_ros2/tree/main/robstride_ros2_control)
 Hardware Component. See the

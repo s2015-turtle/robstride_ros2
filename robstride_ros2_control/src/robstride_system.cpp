@@ -165,8 +165,8 @@ hardware_interface::return_type RobStrideSystem::read(
 hardware_interface::return_type RobStrideSystem::write(
   const rclcpp::Time &, const rclcpp::Duration &)
 {
-  impl_->driver.send_commands();
-  return hardware_interface::return_type::OK;
+  return impl_->driver.send_commands() ?
+         hardware_interface::return_type::OK : hardware_interface::return_type::ERROR;
 }
 
 hardware_interface::return_type RobStrideSystem::prepare_command_mode_switch(

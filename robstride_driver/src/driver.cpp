@@ -227,14 +227,14 @@ bool RobStrideDriver::update_state()
   return !read_failed;
 }
 
-void RobStrideDriver::send_commands()
+bool RobStrideDriver::send_commands()
 {
-  if (!active_) {return;}
+  if (!active_) {return true;}
   {
     // command_snapshot_ is fixed-size after initialize(). The ros2_control write callback is its
     // sole producer; state_mutex_ is released before the batch takes the transport queue lock.
     std::lock_guard<std::mutex> lock(state_mutex_);
-    if (!active_) {return;}
+    if (!active_) {return true;}
     for (size_t joint_index = 0; joint_index < joints_.size(); ++joint_index) {
       const auto & joint = joints_[joint_index];
       const double joint_position =
@@ -258,6 +258,42 @@ void RobStrideDriver::send_commands()
     }
   }
   transport_->queue_motion_frames(command_snapshot_);
+  return check_transport_health();
+}
+
+bool RobStrideDriver::check_transport_health()
+{
+  if (!transport_) {
+    RCLCPP_ERROR_THROTTLE(
+      logger_, *log_clock_, 1000, "CAN transport is unavailable while hardware is active");
+    return false;
+  }
+
+  const auto health = transport_->health(settings_.transmit_failure_timeout);
+  if (health.state == CanTransportHealthState::healthy) {return true;}
+
+  const auto duration_ms =
+    std::chrono::duration_cast<std::chrono::milliseconds>(health.duration).count();
+  const char * condition = "unknown transport failure";
+  if (health.state == CanTransportHealthState::bridge_unavailable) {
+    condition = "CAN bridge transmit endpoint is unavailable";
+  } else if (health.state == CanTransportHealthState::transmit_stalled) {
+    condition = "CAN transmit worker is not making progress";
+  } else if (health.state == CanTransportHealthState::worker_stopped) {
+    condition = "CAN transmit worker stopped unexpectedly";
+  }
+
+  if (!health.persistent) {
+    RCLCPP_WARN_THROTTLE(
+      logger_, *log_clock_, 1000, "%s (%lld ms); waiting up to %lld ms before returning ERROR",
+      condition, static_cast<long long>(duration_ms),
+      static_cast<long long>(settings_.transmit_failure_timeout.count()));
+    return true;
+  }
+  RCLCPP_ERROR_THROTTLE(
+    logger_, *log_clock_, 1000, "%s for %lld ms; returning ERROR to ros2_control",
+    condition, static_cast<long long>(duration_ms));
+  return false;
 }
 
 std::vector<ClaimedInterfaces> RobStrideDriver::command_modes() const

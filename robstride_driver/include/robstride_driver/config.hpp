@@ -16,6 +16,7 @@ struct DriverSettings
   CanTransportOptions transport{};
   std::chrono::milliseconds feedback_timeout{3000};
   bool fail_on_feedback_timeout{true};
+  std::chrono::milliseconds transmit_failure_timeout{1000};
   std::chrono::milliseconds recovery_timeout{500};
   std::chrono::milliseconds recovery_retry_interval{100};
   bool clear_faults_on_start{true};

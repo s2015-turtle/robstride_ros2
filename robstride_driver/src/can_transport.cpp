@@ -19,11 +19,12 @@ int64_t steady_now_ns() noexcept
 
 CanTransport::CanTransport(
   CanTransportOptions options, ReceiveCallback receive_callback, FrameSink frame_sink,
-  MetricsProvider metrics_provider)
+  MetricsProvider metrics_provider, EndpointProbe endpoint_probe)
 : options_(std::move(options)),
   receive_callback_(std::move(receive_callback)),
   frame_sink_(std::move(frame_sink)),
   metrics_provider_(std::move(metrics_provider)),
+  endpoint_probe_(std::move(endpoint_probe)),
   recovery_active_(std::make_unique<std::atomic<bool>[]>(options_.motor_count))
 {
   if (options_.node_name.empty()) {throw std::invalid_argument("node_name must not be empty");}
@@ -46,6 +47,11 @@ void CanTransport::start()
 {
   if (running_) {return;}
   reset_metrics();
+  worker_failed_ = false;
+  bridge_available_ = false;
+  bridge_unavailable_since_ns_ = 0;
+  active_work_progress_ns_ = 0;
+  update_endpoint_status(frame_sink_ && !endpoint_probe_);
 
   if (!frame_sink_) {
     node_ = std::make_shared<rclcpp::Node>(options_.node_name);
@@ -111,16 +117,27 @@ void CanTransport::stop()
 
 bool CanTransport::wait_for_endpoints(std::chrono::milliseconds timeout) const
 {
-  if (frame_sink_) {return running_;}
+  if (frame_sink_) {
+    bool available = running_;
+    try {
+      if (endpoint_probe_) {available = available && endpoint_probe_();}
+    } catch (...) {
+      available = false;
+    }
+    update_endpoint_status(available);
+    return available;
+  }
   const auto deadline = std::chrono::steady_clock::now() + timeout;
   while (std::chrono::steady_clock::now() < deadline) {
     if (publisher_ && receive_subscription_ && publisher_->get_subscription_count() > 0 &&
       receive_subscription_->get_publisher_count() > 0)
     {
+      update_endpoint_status(true);
       return true;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
+  update_endpoint_status(false);
   return false;
 }
 
@@ -147,11 +164,17 @@ void CanTransport::queue_motion_frames(const std::vector<MotorFrame> & frames)
   {
     std::lock_guard<std::mutex> lock(pending_mutex_);
     if (!active_commands_enabled_ || generation != active_generation_) {return;}
+    bool enqueued = false;
     for (const auto & update : frames) {
       if (update.motor_index >= options_.motor_count) {continue;}
       if (pending_motion_frames_[update.motor_index]) {++motion_frames_coalesced_;}
       pending_motion_frames_[update.motor_index] =
         ActiveFrame{update.frame, update.motor_index, generation};
+      enqueued = true;
+    }
+    if (enqueued) {
+      int64_t idle = 0;
+      (void)active_work_progress_ns_.compare_exchange_strong(idle, steady_now_ns());
     }
   }
   pending_condition_.notify_one();
@@ -186,14 +209,20 @@ void CanTransport::apply_recovery_updates(const std::vector<RecoveryUpdate> & up
       }
       return;
     }
+    bool enqueued = false;
     for (const auto & update : updates) {
       if (update.motor_index >= options_.motor_count) {continue;}
       if (update.frame) {
         pending_recovery_frames_[update.motor_index] =
           ActiveFrame{*update.frame, update.motor_index, generation};
+        enqueued = true;
       } else {
         pending_recovery_frames_[update.motor_index].reset();
       }
+    }
+    if (enqueued) {
+      int64_t idle = 0;
+      (void)active_work_progress_ns_.compare_exchange_strong(idle, steady_now_ns());
     }
   }
   pending_condition_.notify_one();
@@ -214,6 +243,7 @@ void CanTransport::disable_active_commands()
   // A frame already being published completes before lifecycle stop transactions are queued.
   // Extracted frames from an older generation are rejected even after a later reactivation.
   std::lock_guard<std::mutex> lock(publisher_mutex_);
+  active_work_progress_ns_ = 0;
 }
 
 bool CanTransport::wait_for_transaction_acknowledgements(
@@ -261,6 +291,15 @@ void CanTransport::publish_active(const ActiveFrame & frame, bool is_recovery)
 
 bool CanTransport::publish_unlocked(const Frame & source)
 {
+  bool endpoint_available = true;
+  if (endpoint_probe_) {
+    endpoint_available = endpoint_probe_();
+  } else if (!frame_sink_) {
+    endpoint_available = publisher_ && publisher_->get_subscription_count() > 0;
+  }
+  update_endpoint_status(endpoint_available);
+  if (!endpoint_available) {return false;}
+
   if (frame_sink_) {
     frame_sink_(source);
     return true;
@@ -292,6 +331,36 @@ CanTransportMetrics CanTransport::metrics() const noexcept
   return snapshot;
 }
 
+CanTransportHealth CanTransport::health(
+  std::chrono::milliseconds failure_timeout) const noexcept
+{
+  const int64_t now_ns = steady_now_ns();
+  const auto elapsed_since = [now_ns](int64_t reference_ns) {
+      return std::chrono::nanoseconds(
+        reference_ns > 0 ? std::max<int64_t>(0, now_ns - reference_ns) : 0);
+    };
+
+  if (worker_failed_ || !running_) {
+    return CanTransportHealth{
+      CanTransportHealthState::worker_stopped, std::chrono::nanoseconds(0), true};
+  }
+  if (!bridge_available_) {
+    const auto duration = elapsed_since(bridge_unavailable_since_ns_);
+    return CanTransportHealth{
+      CanTransportHealthState::bridge_unavailable, duration,
+      duration >= failure_timeout};
+  }
+  if (active_commands_enabled_) {
+    const int64_t progress_ns = active_work_progress_ns_.load();
+    const auto duration = elapsed_since(progress_ns);
+    if (progress_ns > 0 && duration >= failure_timeout) {
+      return CanTransportHealth{
+        CanTransportHealthState::transmit_stalled, duration, true};
+    }
+  }
+  return CanTransportHealth{};
+}
+
 void CanTransport::reset_metrics() noexcept
 {
   motion_frames_transmitted_ = 0;
@@ -299,6 +368,17 @@ void CanTransport::reset_metrics() noexcept
   transaction_frames_transmitted_ = 0;
   motion_frames_coalesced_ = 0;
   metrics_started_at_ns_ = steady_now_ns();
+}
+
+void CanTransport::update_endpoint_status(bool available) const noexcept
+{
+  bridge_available_ = available;
+  if (available) {
+    bridge_unavailable_since_ns_ = 0;
+    return;
+  }
+  int64_t unset = 0;
+  (void)bridge_unavailable_since_ns_.compare_exchange_strong(unset, steady_now_ns());
 }
 
 void CanTransport::publish_diagnostics()
@@ -397,14 +477,31 @@ void CanTransport::transmit_pending_frames()
     }
     lock.unlock();
 
-    for (const auto & frame : transactions) {publish_transaction(frame);}
-    for (const auto & frame : recovery_frames) {publish_active(frame, true);}
-    for (const auto & frame : motion_frames) {publish_active(frame, false);}
+    try {
+      for (const auto & frame : transactions) {publish_transaction(frame);}
+      for (const auto & frame : recovery_frames) {
+        publish_active(frame, true);
+        active_work_progress_ns_ = steady_now_ns();
+      }
+      for (const auto & frame : motion_frames) {
+        publish_active(frame, false);
+        active_work_progress_ns_ = steady_now_ns();
+      }
+    } catch (...) {
+      worker_failed_ = true;
+      running_ = false;
+      pending_condition_.notify_all();
+      return;
+    }
 
     if (!transactions.empty()) {
       std::lock_guard<std::mutex> completed_lock(pending_mutex_);
       transactions_in_flight_ -= transactions.size();
       pending_condition_.notify_all();
+    }
+    {
+      std::lock_guard<std::mutex> completed_lock(pending_mutex_);
+      if (!has_sendable_active_frame()) {active_work_progress_ns_ = 0;}
     }
   }
 }

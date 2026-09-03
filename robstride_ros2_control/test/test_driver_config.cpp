@@ -90,3 +90,23 @@ TEST(DriverConfig, RejectsBlankCanTopics)
   hardware.hardware_parameters["can_rx_topic"] = "";
   EXPECT_THROW(rs::parse_driver_configuration(hardware), std::runtime_error);
 }
+
+TEST(DriverConfig, UsesAndParsesTransmitFailureTimeout)
+{
+  auto hardware = valid_hardware_info();
+  EXPECT_EQ(
+    rs::parse_driver_configuration(hardware).settings.transmit_failure_timeout.count(), 1000);
+
+  hardware.hardware_parameters["transmit_failure_timeout_ms"] = "250";
+  EXPECT_EQ(
+    rs::parse_driver_configuration(hardware).settings.transmit_failure_timeout.count(), 250);
+}
+
+TEST(DriverConfig, RejectsNonPositiveTransmitFailureTimeout)
+{
+  for (const auto * value : {"0", "-1"}) {
+    auto hardware = valid_hardware_info();
+    hardware.hardware_parameters["transmit_failure_timeout_ms"] = value;
+    EXPECT_THROW(rs::parse_driver_configuration(hardware), std::runtime_error) << value;
+  }
+}
