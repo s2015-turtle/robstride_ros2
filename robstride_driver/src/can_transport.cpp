@@ -404,13 +404,31 @@ void CanTransport::publish_diagnostics()
       item.value = stream.str();
       return item;
     };
+  auto hex_value = [](const std::string & key, uint64_t data) {
+      diagnostic_msgs::msg::KeyValue item;
+      item.key = key;
+      std::ostringstream stream;
+      stream << "0x" << std::hex << std::uppercase << data;
+      item.value = stream.str();
+      return item;
+    };
 
   diagnostic_msgs::msg::DiagnosticStatus transport_status;
-  transport_status.level = diagnostic_msgs::msg::DiagnosticStatus::OK;
+  const auto & transport_health = snapshot.transport_health;
+  transport_status.level = transport_health.state == CanTransportHealthState::healthy ?
+    diagnostic_msgs::msg::DiagnosticStatus::OK :
+    (transport_health.persistent && snapshot.hardware_active ?
+    diagnostic_msgs::msg::DiagnosticStatus::ERROR :
+    diagnostic_msgs::msg::DiagnosticStatus::WARN);
   transport_status.name = "robstride_driver/CAN traffic";
   transport_status.hardware_id = options_.transmit_topic + " -> " + options_.receive_topic;
-  transport_status.message = "Traffic counters are active";
+  transport_status.message = transport_health_name(transport_health.state);
   transport_status.values = {
+    value("health", transport_health_name(transport_health.state)),
+    value("failure_persistent", transport_health.persistent),
+    decimal(
+      "health_duration_ms",
+      std::chrono::duration<double, std::milli>(transport_health.duration).count()),
     value("tx_frames", snapshot.transport.transmitted_frames()),
     decimal("tx_rate_hz", snapshot.transport.transmit_rate_hz()),
     value("tx_motion_frames", snapshot.transport.motion_frames_transmitted),
@@ -423,12 +441,40 @@ void CanTransport::publish_diagnostics()
 
   for (const auto & motor : snapshot.motors) {
     diagnostic_msgs::msg::DiagnosticStatus status;
-    status.level = motor.feedback_received ?
-      diagnostic_msgs::msg::DiagnosticStatus::OK : diagnostic_msgs::msg::DiagnosticStatus::WARN;
+    const bool has_fault = motor.fault_flags != 0;
+    const bool unexpected_mode = snapshot.hardware_active && motor.feedback_received &&
+      motor.mode != kMotorModeRun;
+    if (has_fault || motor.feedback_stale) {
+      status.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+    } else if (!motor.feedback_received || unexpected_mode || motor.recovery_active) {
+      status.level = diagnostic_msgs::msg::DiagnosticStatus::WARN;
+    } else {
+      status.level = diagnostic_msgs::msg::DiagnosticStatus::OK;
+    }
     status.name = "robstride_driver/" + motor.joint_name;
     status.hardware_id = "CAN ID " + std::to_string(motor.can_id);
-    status.message = motor.feedback_received ? "Feedback received" : "No feedback received";
+    if (has_fault) {
+      status.message = "Motor fault: " + motor_fault_summary(motor.fault_flags);
+    } else if (motor.feedback_stale) {
+      status.message = "Motor feedback is stale";
+    } else if (!motor.feedback_received) {
+      status.message = "No feedback received";
+    } else if (motor.recovery_active) {
+      status.message = "Recovering motor to Run mode";
+    } else if (unexpected_mode) {
+      status.message = std::string("Unexpected motor mode: ") + motor_mode_name(motor.mode);
+    } else {
+      status.message = "Motor feedback is healthy";
+    }
     status.values = {
+      value("mode", motor_mode_name(motor.mode)),
+      value("mode_raw", static_cast<unsigned int>(motor.mode)),
+      decimal("temperature_c", motor.temperature),
+      hex_value("fault_flags_raw", motor.fault_flags),
+      value("faults", motor_fault_summary(motor.fault_flags)),
+      value("feedback_stale", motor.feedback_stale),
+      value("recovery_active", motor.recovery_active),
+      value("recovery_attempts", motor.recovery_attempts),
       value("feedback_frames", motor.feedback_frames_received),
       decimal("feedback_rate_hz", motor.feedback_rate_hz),
       decimal(

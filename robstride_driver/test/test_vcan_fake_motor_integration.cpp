@@ -106,6 +106,15 @@ void test_complete_lifecycle_and_recovery()
     driver.update_state();
     return std::abs(driver.joints()[0].state.position - 0.75) < 0.01;
   }), "simulated position feedback did not reach the driver");
+  const auto healthy_metrics = driver.metrics();
+  require(healthy_metrics.hardware_active, "diagnostics did not report active hardware");
+  require(healthy_metrics.motors.size() == 1, "diagnostics motor count is incorrect");
+  require(healthy_metrics.motors[0].mode == rs::kMotorModeRun,
+    "diagnostics did not report Run mode");
+  require(std::abs(healthy_metrics.motors[0].temperature - 30.0) < 0.01,
+    "diagnostics did not report motor temperature");
+  require(!healthy_metrics.motors[0].feedback_stale,
+    "current motor feedback was reported as stale");
 
   const uint64_t enables_before = motor.enable_count();
   motor.report_reset();
@@ -117,6 +126,11 @@ void test_complete_lifecycle_and_recovery()
     return driver.update_state() && motor.mode() == rs::kMotorModeRun &&
            driver.joints()[0].feedback_status.mode == rs::kMotorModeRun;
   }), "motor did not recover to Run mode");
+  const auto recovered_metrics = driver.metrics();
+  require(recovered_metrics.motors[0].recovery_attempts > 0,
+    "diagnostics did not retain the recovery attempt count");
+  require(!recovered_metrics.motors[0].recovery_active,
+    "diagnostics still reported recovery after Run mode returned");
 
   driver.stop();
   require(wait_until([&]() {return motor.mode() == rs::kMotorModeReset;}),
@@ -133,6 +147,8 @@ void test_feedback_timeout()
   open_and_start(driver);
   motor.set_feedback_enabled(false);
   std::this_thread::sleep_for(300ms);
+  require(driver.metrics().motors[0].feedback_stale,
+    "diagnostics did not mark expired feedback as stale");
   require(!driver.update_state(), "feedback timeout did not fail the active driver");
   motor.set_stop_confirmation_enabled(false);
   driver.stop();

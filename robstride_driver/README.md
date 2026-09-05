@@ -20,10 +20,12 @@ Public headers are installed under `robstride_driver/` and cover:
 
 `RobStrideDriver::metrics()` returns the measured transmit categories,
 latest-command-wins motion-command replacement count, recognized receive
-counts, and per-motor feedback rate and age. The snapshot reads atomic counters
-and does not acquire the transport worker or driver state mutex. When the normal ROS
-topic transport is used, the same information is published once per second as
-standard diagnostics on `/diagnostics`.
+counts, transport health, and per-motor mode, temperature, decoded faults,
+recovery activity, feedback rate, and age. The snapshot reads a consistent
+atomic status sample per motor and does not acquire the transport worker or
+driver state mutex. When the normal ROS topic transport is used, the same
+information is published once per second as standard diagnostics on
+`/diagnostics`.
 
 While active, the driver distinguishes temporary topic endpoint loss from a
 persistent transmit failure. Persistent endpoint loss, a stalled sender, or an
