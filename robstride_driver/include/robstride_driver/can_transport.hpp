@@ -34,21 +34,6 @@ struct CanTransportOptions
   size_t receive_qos_depth{32};
 };
 
-enum class CanTransportHealthState
-{
-  healthy,
-  bridge_unavailable,
-  transmit_stalled,
-  worker_stopped,
-};
-
-struct CanTransportHealth
-{
-  CanTransportHealthState state{CanTransportHealthState::healthy};
-  std::chrono::nanoseconds duration{0};
-  bool persistent{false};
-};
-
 class CanTransport
 {
 public:

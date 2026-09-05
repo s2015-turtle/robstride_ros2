@@ -319,12 +319,27 @@ second:
 ros2 topic echo /diagnostics
 ```
 
-The `robstride_driver/CAN traffic` entry reports transmitted motion, recovery,
-and lifecycle/parameter transaction frames separately. It also reports the
-number of motion commands replaced before transmission by the
+The `robstride_driver/CAN traffic` entry reports transport health, transmitted
+motion, recovery, and lifecycle/parameter transaction frames separately. It
+also reports the number of motion commands replaced before transmission by the
 latest-command-wins queue. Each `robstride_driver/<joint_name>` entry reports
-the recognized feedback count, average feedback rate, current feedback age,
-and maximum observed feedback age.
+motor mode, temperature, raw and decoded fault flags, recovery state and
+attempt count, recognized feedback count, average feedback rate, current
+feedback age, and maximum observed feedback age.
+
+Diagnostic levels have the following meaning:
+
+| Level | Motor entry | CAN traffic entry |
+|---|---|---|
+| `OK` | Feedback is current, no fault is set, and an active motor is in Run mode | Transport is healthy |
+| `WARN` | No feedback yet, Run-mode recovery is active, or an active motor is outside Run mode | Endpoint loss is still within its grace period, or hardware is inactive |
+| `ERROR` | Feedback is stale or a motor fault flag is set | A persistent transport failure affects active hardware |
+
+The six fault flags in the normal motor feedback are decoded as undervoltage,
+overcurrent, over-temperature, encoder fault, stall overload, and encoder
+uncalibrated. The `fault_flags_raw` field remains available for firmware-level
+troubleshooting. These names follow the private-protocol feedback definition in
+the RobStride manuals linked below.
 
 The rates are averages since the CAN transport was opened. They are measured
 at the driver boundary, not inferred from the controller-manager update rate.

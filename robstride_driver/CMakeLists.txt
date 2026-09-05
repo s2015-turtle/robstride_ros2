@@ -52,6 +52,8 @@ if(BUILD_TESTING)
   target_link_libraries(test_can_transport ${PROJECT_NAME})
   ament_add_gtest(test_joint_data test/test_joint_data.cpp)
   target_link_libraries(test_joint_data ${PROJECT_NAME})
+  ament_add_gtest(test_metrics test/test_metrics.cpp)
+  target_link_libraries(test_metrics ${PROJECT_NAME})
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     add_library(robstride_vcan_test_support STATIC
       test/support/fake_robstride_motor.cpp

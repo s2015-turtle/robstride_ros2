@@ -265,11 +265,25 @@ Hardware Componentがconfigureされている間、driverは標準の
 ros2 topic echo /diagnostics
 ```
 
-`robstride_driver/CAN traffic`には、motion frame、recovery frame、
+`robstride_driver/CAN traffic`には、transport health、motion frame、recovery frame、
 lifecycle/parameter transaction frameそれぞれの送信数と、
 latest-command-wins queueで未送信motion commandが新しい値へ置き換えられた回数が表示されます。
-各`robstride_driver/<joint_name>`には、認識したfeedback数、平均feedback rate、
-現在のfeedback age、最大feedback ageが表示されます。
+各`robstride_driver/<joint_name>`には、motor mode、温度、rawおよび名称付きfault、
+recovery状態と試行回数、認識したfeedback数、平均feedback rate、現在のfeedback age、
+最大feedback ageが表示されます。
+
+diagnostic levelは次のように解釈します。
+
+| level | motor entry | CAN traffic entry |
+|---|---|---|
+| `OK` | feedbackが新しくfaultがなく、active中ならRun mode | transportが正常 |
+| `WARN` | feedback未受信、Run mode復帰中、またはactive中にRun以外 | endpoint消失が猶予時間内、またはHardwareがinactive |
+| `ERROR` | feedbackが古い、またはmotor faultあり | activeなHardwareに影響する継続的なtransport障害 |
+
+通常feedbackの6つのfault flagは、undervoltage、overcurrent、over-temperature、
+encoder fault、stall overload、encoder uncalibratedとして表示します。
+firmware単位の調査用に`fault_flags_raw`も保持します。名称は末尾に記載した
+RobStride manualのprivate protocol feedback定義に従います。
 
 rateはCAN transportをopenしてからの平均実測値であり、controller managerの
 update rateから推定した値ではありません。command生成がtransportの送信より速い場合は、

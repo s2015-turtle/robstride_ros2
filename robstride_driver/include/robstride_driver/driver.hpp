@@ -67,13 +67,14 @@ private:
   void log_runtime_events();
   bool check_transport_health();
   void reset_metrics();
-  void record_feedback(size_t joint_index, std::chrono::steady_clock::time_point now) noexcept;
+  void record_feedback(
+    size_t joint_index, std::chrono::steady_clock::time_point now,
+    const Feedback & feedback) noexcept;
 
-  struct AtomicFeedbackMetrics
+  struct AtomicRecoveryMetrics
   {
-    std::atomic<uint64_t> count{0};
-    std::atomic<int64_t> last_received_at_ns{0};
-    std::atomic<int64_t> maximum_gap_ns{0};
+    std::atomic<bool> active{false};
+    std::atomic<uint64_t> attempts{0};
   };
 
   rclcpp::Logger logger_;
@@ -92,7 +93,8 @@ private:
   std::atomic<uint64_t> feedback_frames_received_{0};
   std::atomic<uint64_t> parameter_frames_received_{0};
   std::atomic<int64_t> metrics_started_at_ns_{0};
-  std::unique_ptr<AtomicFeedbackMetrics[]> feedback_metrics_;
+  std::unique_ptr<AtomicMotorFeedback[]> feedback_metrics_;
+  std::unique_ptr<AtomicRecoveryMetrics[]> recovery_metrics_;
 };
 
 }  // namespace robstride_driver
