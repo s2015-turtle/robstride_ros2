@@ -115,15 +115,15 @@ JointData parse_joint(const hardware_interface::ComponentInfo & info)
       }
     } else {
       joint.limits = Limits{
-      required_number(info.parameters, "position_min"),
-      required_number(info.parameters, "position_max"),
-      required_number(info.parameters, "velocity_min"),
-      required_number(info.parameters, "velocity_max"),
-      required_number(info.parameters, "effort_min"),
-      required_number(info.parameters, "effort_max"),
-      number_or_parameter(info.parameters, "effort_wire_min", "effort_min"),
-      number_or_parameter(info.parameters, "effort_wire_max", "effort_max"),
-      required_number(info.parameters, "kp_max"), required_number(info.parameters, "kd_max")};
+        required_number(info.parameters, "position_min"),
+        required_number(info.parameters, "position_max"),
+        required_number(info.parameters, "velocity_min"),
+        required_number(info.parameters, "velocity_max"),
+        required_number(info.parameters, "effort_min"),
+        required_number(info.parameters, "effort_max"),
+        number_or_parameter(info.parameters, "effort_wire_min", "effort_min"),
+        number_or_parameter(info.parameters, "effort_wire_max", "effort_max"),
+        required_number(info.parameters, "kp_max"), required_number(info.parameters, "kd_max")};
     }
     joint.kp = required_number(info.parameters, "kp");
     joint.kd = required_number(info.parameters, "kd");
