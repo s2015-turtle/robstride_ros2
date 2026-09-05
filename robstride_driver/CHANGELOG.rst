@@ -2,6 +2,16 @@
 Changelog for package robstride_driver
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+0.2.0 (2026-09-06)
+------------------
+* Add CAN traffic metrics and human-readable motor and transport diagnostics.
+* Report motor mode, temperature, faults, feedback age, and recovery attempts.
+* Reduce transport contention during control updates and propagate persistent
+  transmit-path failures.
+* Add virtual CAN transport and fake-motor lifecycle integration tests.
+* Centralize RS00-RS06 and EL05 protocol ranges in the motor profile registry.
+* Contributors: Yamato.K
+
 0.1.2 (2026-08-26)
 ------------------
 * Apply ``gear_ratio`` when converting effort commands and feedback between

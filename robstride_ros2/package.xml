@@ -2,7 +2,7 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>robstride_ros2</name>
-  <version>0.1.2</version>
+  <version>0.2.0</version>
   <description>Aggregate installation package for the RobStride driver, ros2_control component, and examples.</description>
   <maintainer email="ykturtler@outlook.com">yamato</maintainer>
   <license>MIT</license>

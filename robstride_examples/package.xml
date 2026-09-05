@@ -2,7 +2,7 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>robstride_examples</name>
-  <version>0.1.2</version>
+  <version>0.2.0</version>
   <description>Ready-to-use Xacro profiles, ros2_control configuration, and launch examples for RobStride actuators.</description>
   <maintainer email="ykturtler@outlook.com">yamato</maintainer>
   <license>MIT</license>

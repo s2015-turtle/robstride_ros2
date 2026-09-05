@@ -2,6 +2,14 @@
 Changelog for package robstride_examples
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+0.2.0 (2026-09-06)
+------------------
+* Forward the existing motor-profile Xacro include to robstride_ros2_control,
+  preserving macro names and arguments.
+* Remove duplicated protocol ranges from the example package.
+* Verify model selection, explicit gains, and operational limits in Xacro tests.
+* Contributors: Yamato.K
+
 0.1.2 (2026-08-26)
 ------------------
 * Clarify that ``gear_ratio`` applies an ideal additional transmission to
