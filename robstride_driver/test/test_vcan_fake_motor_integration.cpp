@@ -135,7 +135,10 @@ void test_complete_lifecycle_and_recovery()
   driver.stop();
   require(wait_until([&]() {return motor.mode() == rs::kMotorModeReset;}),
     "motor did not confirm Reset during deactivation");
-  require(motor.stop_count() >= 2, "configured stop repetitions were not sent");
+  // DDS acknowledgement and the first Reset feedback can precede delivery of
+  // the final stop frame through the bridge to the fake motor's receive thread.
+  require(wait_until([&]() {return motor.stop_count() >= 2;}),
+    "configured stop repetitions were not sent");
   driver.close();
 }
 
@@ -182,7 +185,8 @@ void test_missing_stop_confirmation()
   driver.stop();
   const auto elapsed = std::chrono::steady_clock::now() - started;
   require(elapsed < 1s, "missing stop confirmation blocked shutdown");
-  require(motor.stop_count() >= 2, "stop retries were not sent without confirmation");
+  require(wait_until([&]() {return motor.stop_count() >= 2;}),
+    "stop retries were not sent without confirmation");
   driver.close();
 }
 
