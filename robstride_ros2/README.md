@@ -5,7 +5,7 @@ depends on and installs:
 
 - `robstride_driver`, the private-CAN protocol and transport library;
 - `robstride_ros2_control`, the ROS 2 Hardware Component;
-- `robstride_examples`, the actuator profiles and example launch files.
+- `robstride_examples`, the example launch files.
 
 This package does not provide a separate node or hardware plugin. Install it
 when the complete driver and examples are wanted. Projects that provide their

@@ -57,21 +57,6 @@ jobs:
             --rosdistro "${{ matrix.ros_distro }}" \
             -r -y
 
-      - name: Check xacro files
-        shell: bash
-        run: |
-          source "/opt/ros/${{ matrix.ros_distro }}/setup.bash"
-          PYTHONPYCACHEPREFIX=/tmp/robstride_pycache python3 -m compileall -q \
-            robstride_examples/launch
-          xacro robstride_examples/description/robstride_motor_profiles.xacro \
-            > /tmp/robstride_motor_profiles.urdf
-          xacro robstride_examples/description/robstride_example.urdf.xacro \
-            > /tmp/robstride_example.urdf
-          xacro robstride_examples/test/test_motor_profiles.urdf.xacro \
-            > /tmp/robstride_profile_test.urdf
-          xacro robstride_examples/test/test_command_limits.urdf.xacro \
-            > /tmp/robstride_command_limits_test.urdf
-
       - name: Check package set
         shell: bash
         run: |
@@ -90,6 +75,22 @@ jobs:
           colcon build \
             --base-paths . \
             --event-handlers console_cohesion+
+
+      - name: Check xacro files
+        shell: bash
+        run: |
+          source "/opt/ros/${{ matrix.ros_distro }}/setup.bash"
+          source install/setup.bash
+          PYTHONPYCACHEPREFIX=/tmp/robstride_pycache python3 -m compileall -q \
+            robstride_examples/launch
+          xacro robstride_examples/description/robstride_motor_profiles.xacro \
+            > /tmp/robstride_motor_profiles.urdf
+          xacro robstride_examples/description/robstride_example.urdf.xacro \
+            > /tmp/robstride_example.urdf
+          xacro robstride_examples/test/test_motor_profiles.urdf.xacro \
+            > /tmp/robstride_profile_test.urdf
+          xacro robstride_examples/test/test_command_limits.urdf.xacro \
+            > /tmp/robstride_command_limits_test.urdf
 
       - name: Check installed resources
         shell: bash

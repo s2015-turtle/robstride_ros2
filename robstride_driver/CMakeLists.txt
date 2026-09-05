@@ -16,6 +16,7 @@ add_library(${PROJECT_NAME} SHARED
   src/can_transport.cpp
   src/driver.cpp
   src/metrics.cpp
+  src/motor_profile.cpp
   src/protocol.cpp
 )
 add_library(${PROJECT_NAME}::${PROJECT_NAME} ALIAS ${PROJECT_NAME})

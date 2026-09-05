@@ -1,4 +1,5 @@
 #include "robstride_ros2_control/driver_config.hpp"
+#include "robstride_driver/motor_profile.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -88,16 +89,42 @@ JointData parse_joint(const hardware_interface::ComponentInfo & info)
       throw std::runtime_error("can_id must be 1..255");
     }
     joint.can_id = static_cast<uint8_t>(motor_can_id);
-    joint.limits = Limits{
-      required_number(info.parameters, "position_min"),
-      required_number(info.parameters, "position_max"),
-      required_number(info.parameters, "velocity_min"),
-      required_number(info.parameters, "velocity_max"),
-      required_number(info.parameters, "effort_min"),
-      required_number(info.parameters, "effort_max"),
-      number_or_parameter(info.parameters, "effort_wire_min", "effort_min"),
-      number_or_parameter(info.parameters, "effort_wire_max", "effort_max"),
-      required_number(info.parameters, "kp_max"), required_number(info.parameters, "kd_max")};
+    const auto model = info.parameters.find("model");
+    if (model != info.parameters.end() && model->second != "custom") {
+      joint.limits = robstride_driver::motor_profile(model->second);
+      const std::pair<const char *, double> expected[] = {
+        {"position_min", joint.limits.position_min},
+        {"position_max", joint.limits.position_max},
+        {"velocity_min", joint.limits.velocity_min},
+        {"velocity_max", joint.limits.velocity_max},
+        {"effort_min", joint.limits.effort_min},
+        {"effort_max", joint.limits.effort_max},
+        {"effort_wire_min", joint.limits.effort_wire_min},
+        {"effort_wire_max", joint.limits.effort_wire_max},
+        {"kp_max", joint.limits.kp_max}, {"kd_max", joint.limits.kd_max}};
+      for (const auto & entry : expected) {
+        if (info.parameters.count(entry.first)) {
+          size_t consumed = 0;
+          const auto & text = info.parameters.at(entry.first);
+          const double value = std::stod(text, &consumed);
+          if (consumed != text.size() || value != entry.second) {
+            throw std::runtime_error(
+                    std::string(entry.first) + " conflicts with model '" + model->second + "'");
+          }
+        }
+      }
+    } else {
+      joint.limits = Limits{
+        required_number(info.parameters, "position_min"),
+        required_number(info.parameters, "position_max"),
+        required_number(info.parameters, "velocity_min"),
+        required_number(info.parameters, "velocity_max"),
+        required_number(info.parameters, "effort_min"),
+        required_number(info.parameters, "effort_max"),
+        number_or_parameter(info.parameters, "effort_wire_min", "effort_min"),
+        number_or_parameter(info.parameters, "effort_wire_max", "effort_max"),
+        required_number(info.parameters, "kp_max"), required_number(info.parameters, "kd_max")};
+    }
     joint.kp = required_number(info.parameters, "kp");
     joint.kd = required_number(info.parameters, "kd");
     const auto & watchdog_text = info.parameters.at("can_timeout_ticks");
