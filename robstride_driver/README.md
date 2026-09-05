@@ -1,5 +1,11 @@
 # robstride_driver
 
+The motor profile registry in `src/motor_profile.cpp` owns the RS00–RS06 and
+EL05 protocol ranges. `motor_profile()` exposes these to configuration clients;
+unknown names are rejected. These ranges retain the values checked against the
+RobStride English manuals dated July 13, 2026, linked in the source and repository
+README. They describe CAN normalization, not recommended operating limits.
+
 `robstride_driver` is the bridge-independent core library for RobStride
 actuators using the documented 29-bit private CAN protocol. It provides frame
 encoding and decoding, `can_msgs/msg/Frame` topic transport, motor lifecycle

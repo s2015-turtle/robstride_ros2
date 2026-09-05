@@ -32,7 +32,7 @@ The repository contains four ROS 2 packages:
 |---|---|
 | `robstride_driver` | Private protocol and `can_msgs` topic transport |
 | `robstride_ros2_control` | `ros2_control` Hardware Component |
-| `robstride_examples` | Motor-profile Xacro, controller configuration, and example launch |
+| `robstride_examples` | Controller configuration and example launch |
 | `robstride_ros2` | Installs the complete set of packages |
 
 The plugin identifier `robstride_ros2/RobStrideSystem` remains compatible with
@@ -196,11 +196,12 @@ Each `<joint>` requires its own motor settings.
 |---|---:|---|
 | `can_id` | required | Unique motor CAN ID in the range `1..255` |
 | `can_timeout_ticks` | required | Nonzero motor-side CAN watchdog; 20,000 ticks equals 1 second |
-| `position_min/max` | required | CAN encoding range in radians |
-| `velocity_min/max` | required | CAN encoding range in rad/s |
-| `effort_min/max` | required | Motor-side effort clamp in Nm |
+| `model` | custom | Known model name or `custom` (explicit numeric limits) |
+| `position_min/max` | required for custom | CAN encoding range in radians |
+| `velocity_min/max` | required for custom | CAN encoding range in rad/s |
+| `effort_min/max` | required for custom | Motor-side effort clamp in Nm |
 | `effort_wire_min/max` | effort limits | Motor-side CAN encoding range in Nm |
-| `kp_max` / `kd_max` | required | Gain encoding limits |
+| `kp_max` / `kd_max` | required for custom | Gain encoding limits |
 | `kp` / `kd` | required | Gains used for position and velocity command interfaces |
 | `direction` | `1` | Joint direction; either `1` or `-1` |
 | `gear_ratio` | `1.0` | Additional protocol-side rotations per ROS joint rotation |
@@ -242,8 +243,22 @@ state interfaces. `temperature` and `fault` are optional state interfaces:
 
 ## Model profile macros
 
+Known models resolve their protocol ranges from `robstride_driver`. Set the joint
+parameter `model` to `RS00`–`RS06`, `EL05`, or `EduLite05`; numeric protocol
+limits can be omitted. Supplied numeric limits must exactly match that model.
+Use `command_*` limits for tighter robot operating limits.
+
+For custom hardware, set `model` to `custom` and supply the numeric protocol
+limits listed above. Omitting `model` preserves the existing explicit-limit
+configuration. Gains and watchdog settings remain required.
+
+Existing macro names and arguments remain supported. The old include path in
+`robstride_examples` forwards to the production package. Expanded Xacro now
+contains `model` instead of numeric protocol ranges and requires this driver
+version or newer.
+
 The predefined macros are in
-[`robstride_examples/description/robstride_motor_profiles.xacro`](robstride_examples/description/robstride_motor_profiles.xacro).
+[`robstride_ros2_control/description/robstride_motor_profiles.xacro`](robstride_ros2_control/description/robstride_motor_profiles.xacro).
 
 | Model | Macro | Default watchdog ticks |
 |---|---|---:|
@@ -259,7 +274,7 @@ The predefined macros are in
 Example:
 
 ```xml
-<xacro:include filename="$(find robstride_examples)/description/robstride_motor_profiles.xacro"/>
+<xacro:include filename="$(find robstride_ros2_control)/description/robstride_motor_profiles.xacro"/>
 
 <joint name="wheel_joint_1">
   <xacro:robstride_edulite05_params

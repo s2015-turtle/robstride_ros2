@@ -162,11 +162,12 @@ active中は送信経路も監視します。CAN bridgeの送信topic endpoint�
 |---|---:|---|
 | `can_id` | 必須 | 一意なmotor CAN ID。範囲は`1..255` |
 | `can_timeout_ticks` | 必須 | motor側CAN watchdog。非ゼロ必須。20,000 ticksで1秒 |
-| `position_min/max` | 必須 | CAN positionのencode・decode範囲 `[rad]` |
-| `velocity_min/max` | 必須 | CAN velocityのencode・decode範囲 `[rad/s]` |
-| `effort_min/max` | 必須 | モーター側effortのclamp範囲 `[Nm]` |
+| `model` | custom | 型番名、または数値を明示する`custom` |
+| `position_min/max` | custom時必須 | CAN positionのencode・decode範囲 `[rad]` |
+| `velocity_min/max` | custom時必須 | CAN velocityのencode・decode範囲 `[rad/s]` |
+| `effort_min/max` | custom時必須 | モーター側effortのclamp範囲 `[Nm]` |
 | `effort_wire_min/max` | effort制限と同じ | モーター側CAN effortのencode・decode範囲 `[Nm]` |
-| `kp_max` / `kd_max` | 必須 | gainのencode上限 |
+| `kp_max` / `kd_max` | custom時必須 | gainのencode上限 |
 | `kp` / `kd` | 必須 | position・velocity command interfaceで使用するgain |
 | `direction` | `1` | jointの方向。`1`または`-1` |
 | `gear_ratio` | `1.0` | ROS joint回転に対する追加のprotocol側回転比 |
@@ -197,7 +198,17 @@ effortにも同じ理想transmission変換を適用します。モーターへ�
 
 ## 型番別Xacro macro
 
-定義は[`robstride_examples/description/robstride_motor_profiles.xacro`](../robstride_examples/description/robstride_motor_profiles.xacro)にあります。
+型番はjointの`model`に`RS00`〜`RS06`、`EL05`（別名`EduLite05`）を指定できます。
+この場合、数値の通信範囲は`robstride_driver`から設定され、省略できます。
+併記した数値が型番の定義と異なる場合は起動エラーになります。
+運用上の制限には`command_*`を使用してください。
+`model="custom"`または`model`省略時は、従来どおり数値の通信範囲を指定します。
+ゲインとwatchdogの指定は引き続き必要です。
+
+既存のマクロ名・引数とexamples側のincludeパスは維持します。
+展開後のXacroは数値の通信範囲の代わりに`model`を出力するため、対応する新しいdriverが必要です。
+
+定義は[`robstride_ros2_control/description/robstride_motor_profiles.xacro`](../robstride_ros2_control/description/robstride_motor_profiles.xacro)にあります。
 
 | 型番 | macro | default watchdog ticks |
 |---|---|---:|
@@ -213,7 +224,7 @@ effortにも同じ理想transmission変換を適用します。モーターへ�
 使用例：
 
 ```xml
-<xacro:include filename="$(find robstride_examples)/description/robstride_motor_profiles.xacro"/>
+<xacro:include filename="$(find robstride_ros2_control)/description/robstride_motor_profiles.xacro"/>
 
 <joint name="wheel_joint_1">
   <xacro:robstride_edulite05_params

@@ -3,7 +3,7 @@
 `robstride_examples` contains the ready-to-run integration files for
 `robstride_ros2_control`:
 
-- Xacro motor profiles for RS00 through RS06 and EduLite EL05;
+- compatibility Xacro includes for the production-owned motor profiles;
 - position, velocity, and effort controller configuration;
 - a robot description for a single EL05 actuator;
 - a launch file that starts `ros2_socketcan`, `ros2_control`, and the example

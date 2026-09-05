@@ -5,6 +5,14 @@
 IDs on one CAN bus, and each joint can independently use position, velocity, or
 effort commands.
 
+Production robot descriptions can include
+`$(find robstride_ros2_control)/description/robstride_motor_profiles.xacro`
+without depending on `robstride_examples`. The helpers select a `model` whose
+protocol limits are defined once in `robstride_driver`. Direct joint parameters
+also accept `model` values `RS00` through `RS06`, `EL05` (alias `EduLite05`), or
+`custom` for explicit numeric limits. Numeric overrides of a known model must
+match its profile; use `command_*` parameters for operational limits.
+
 Use the following plugin identifier in a `ros2_control` robot description:
 
 ```xml
