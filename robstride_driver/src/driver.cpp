@@ -52,6 +52,12 @@ bool RobStrideDriver::initialize(DriverConfiguration configuration)
   }
   std::set<uint8_t> can_ids;
   for (const auto & joint : configuration.joints) {
+    if (const auto * range = joint.invalid_neutral_range()) {
+      RCLCPP_ERROR(
+        logger_, "Joint '%s': %s must be finite, ordered, and include zero",
+        joint.name.c_str(), range);
+      return false;
+    }
     const auto & command = joint.command_limits;
     if (joint.can_id == 0 || joint.can_timeout_ticks == 0 ||
       !can_ids.insert(joint.can_id).second ||

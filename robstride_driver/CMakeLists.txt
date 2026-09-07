@@ -47,6 +47,8 @@ install(FILES README.md CHANGELOG.rst LICENSE DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_driver_configuration test/test_driver_configuration.cpp)
+  target_link_libraries(test_driver_configuration ${PROJECT_NAME})
   ament_add_gtest(test_protocol test/test_protocol.cpp)
   target_link_libraries(test_protocol ${PROJECT_NAME})
   ament_add_gtest(test_can_transport test/test_can_transport.cpp)

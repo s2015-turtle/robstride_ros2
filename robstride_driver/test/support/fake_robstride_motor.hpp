@@ -3,6 +3,9 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <optional>
+
+#include "robstride_driver/protocol.hpp"
 
 namespace robstride_driver::test
 {
@@ -34,6 +37,7 @@ public:
   uint64_t motion_count() const;
   uint64_t stop_count() const;
   uint32_t parameter(uint16_t index) const;
+  std::optional<Frame> last_motion_frame() const;
 
 private:
   struct Impl;

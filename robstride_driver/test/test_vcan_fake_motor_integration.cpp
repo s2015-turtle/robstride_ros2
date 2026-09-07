@@ -142,6 +142,42 @@ void test_complete_lifecycle_and_recovery()
   driver.close();
 }
 
+void test_neutral_commands_after_mode_activation()
+{
+  auto motor = make_fake_motor();
+  rs::RobStrideDriver driver(rclcpp::get_logger("vcan_neutral_commands"));
+  auto config = configuration("vcan_neutral_commands");
+  auto & joint = config.joints.front();
+  joint.command_limits.velocity_min = 0.0;
+  joint.command_limits.effort_max = 0.0;
+  joint.direction = -1.0;
+  joint.gear_ratio = 2.0;
+  require(driver.initialize(config), "zero-boundary configuration was rejected");
+  open_and_start(driver);
+  for (const auto mode : {
+      rs::ClaimedInterfaces{false, true, false}, rs::ClaimedInterfaces{false, false, true}})
+  {
+    // Activation must discard stale nonzero commands and transmit neutral values.
+    driver.joints()[0].command.velocity = 4.0;
+    driver.joints()[0].command.effort = -2.0;
+    require(driver.apply_command_modes({mode}), "command mode was rejected");
+    const auto before = motor.motion_count();
+    require(driver.send_commands(), "neutral command submission failed");
+    require(wait_until([&]() {return motor.motion_count() > before;}),
+      "neutral command did not reach vcan motor");
+    const auto frame = motor.last_motion_frame();
+    const auto expected = rs::make_motion_command(
+      kMotorId, kLimits, 0.0, 0.0, 0.0, 0.0, mode.velocity ? joint.kd : 0.0);
+    require(frame.has_value(), "no motion frame captured");
+    // Compare encoded zero, not decoded floating point zero (16-bit quantization).
+    require(frame->id == expected.id, "nonzero feedforward torque on activation");
+    require(frame->data[2] == expected.data[2] && frame->data[3] == expected.data[3],
+      "nonzero velocity on activation");
+  }
+  driver.stop();
+  driver.close();
+}
+
 void test_feedback_timeout()
 {
   auto motor = make_fake_motor();
@@ -229,6 +265,7 @@ int main(int argc, char ** argv)
   rclcpp::init(argc, argv);
   try {
     test_complete_lifecycle_and_recovery();
+    test_neutral_commands_after_mode_activation();
     test_feedback_timeout();
     test_parameter_confirmation_failure();
     test_missing_stop_confirmation();
