@@ -104,8 +104,6 @@ struct FakeRobStrideMotor::Impl
         Frame frame;
         frame.id = id;
         frame.data = data;
-        frame.dlc = 8;
-        frame.is_extended = true;
         last_motion = frame;
       }
       ++motion_count;
