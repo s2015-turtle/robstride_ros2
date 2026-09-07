@@ -191,6 +191,9 @@ JointData parse_joint(const hardware_interface::ComponentInfo & info)
       number_or_value(info.parameters, "command_effort_min", default_effort.first),
       number_or_value(info.parameters, "command_effort_max", default_effort.second)};
 
+    if (const auto * range = joint.invalid_neutral_range()) {
+      throw std::runtime_error(std::string(range) + " must be finite, ordered, and include zero");
+    }
     const auto & command = joint.command_limits;
     if (!std::isfinite(command.position_min) || !std::isfinite(command.position_max) ||
       !std::isfinite(command.velocity_min) || !std::isfinite(command.velocity_max) ||

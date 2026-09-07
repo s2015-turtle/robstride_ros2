@@ -50,6 +50,42 @@ hardware_interface::HardwareInfo valid_hardware_info()
 }
 }  // namespace
 
+TEST(DriverConfig, RejectsNeutralRangesExcludingZero)
+{
+  for (const std::string prefix : {
+      "command_velocity", "command_effort", "velocity", "effort", "effort_wire"})
+  {
+    for (const bool positive : {true, false}) {
+      auto hardware = valid_hardware_info();
+      hardware.joints[0].parameters[prefix + "_min"] = positive ? "1" : "-3";
+      hardware.joints[0].parameters[prefix + "_max"] = positive ? "3" : "-1";
+      SCOPED_TRACE(prefix);
+      try {
+        rs::parse_driver_configuration(hardware);
+        FAIL() << "accepted a range excluding zero";
+      } catch (const std::runtime_error & error) {
+        EXPECT_NE(std::string(error.what()).find("joint_1"), std::string::npos);
+        EXPECT_NE(std::string(error.what()).find("include zero"), std::string::npos);
+      }
+    }
+  }
+}
+
+TEST(DriverConfig, AllowsZeroAtOperationalBoundaryAndNonzeroPositionRange)
+{
+  for (const bool positive : {true, false}) {
+    auto hardware = valid_hardware_info();
+    auto & params = hardware.joints[0].parameters;
+    params["command_position_min"] = "1";
+    params["command_position_max"] = "2";
+    for (const std::string prefix : {"command_velocity", "command_effort"}) {
+      params[prefix + "_min"] = positive ? "0" : "-3";
+      params[prefix + "_max"] = positive ? "3" : "0";
+    }
+    EXPECT_NO_THROW(rs::parse_driver_configuration(hardware));
+  }
+}
+
 TEST(DriverConfig, ResolvesAllKnownModelsWithoutNumericLimits)
 {
   struct Expected {const char * name; double velocity; double effort; double kp; double kd;};

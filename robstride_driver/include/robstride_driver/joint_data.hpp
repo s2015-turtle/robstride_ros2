@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <limits>
 #include <string>
@@ -135,6 +136,28 @@ struct JointData
   FeedbackStatus feedback_status{};
   ParameterStatus parameter_status{};
   RecoveryState recovery{};
+
+  // Every clamp/encoding range used by a neutral command must preserve zero.
+  // Position is intentionally excluded: its origin need not be in the operating range.
+  const char * invalid_neutral_range() const noexcept
+  {
+    const auto valid = [](double minimum, double maximum) {
+        return std::isfinite(minimum) && std::isfinite(maximum) &&
+               minimum < maximum && minimum <= 0.0 && maximum >= 0.0;
+      };
+    if (!valid(command_limits.velocity_min, command_limits.velocity_max)) {
+      return "command_velocity_min/max";
+    }
+    if (!valid(command_limits.effort_min, command_limits.effort_max)) {
+      return "command_effort_min/max";
+    }
+    if (!valid(limits.velocity_min, limits.velocity_max)) {return "velocity_min/max";}
+    if (!valid(limits.effort_min, limits.effort_max)) {return "effort_min/max";}
+    if (!valid(limits.effort_wire_min, limits.effort_wire_max)) {
+      return "effort_wire_min/max";
+    }
+    return nullptr;
+  }
 
   double joint_to_motor_effort(double joint_effort) const noexcept
   {

@@ -99,6 +99,15 @@ struct FakeRobStrideMotor::Impl
       mode = kMotorModeReset;
       if (stop_confirmation_enabled) {send_feedback();}
     } else if (type == kTypeMotionControl) {
+      {
+        std::lock_guard<std::mutex> lock(state_mutex);
+        Frame frame;
+        frame.id = id;
+        frame.data = data;
+        frame.dlc = 8;
+        frame.is_extended = true;
+        last_motion = frame;
+      }
       ++motion_count;
       position_raw = read_be16(data, 0);
       velocity_raw = read_be16(data, 2);
@@ -161,6 +170,7 @@ struct FakeRobStrideMotor::Impl
   std::atomic<uint64_t> stop_count{0};
   mutable std::mutex state_mutex;
   std::unordered_map<uint16_t, uint32_t> parameters;
+  std::optional<Frame> last_motion;
   std::string worker_error;
   std::thread worker;
 };
@@ -209,6 +219,12 @@ uint32_t FakeRobStrideMotor::parameter(uint16_t index) const
   const auto entry = impl_->parameters.find(index);
   if (entry == impl_->parameters.end()) {throw std::runtime_error("parameter was not written");}
   return entry->second;
+}
+
+std::optional<Frame> FakeRobStrideMotor::last_motion_frame() const
+{
+  std::lock_guard<std::mutex> lock(impl_->state_mutex);
+  return impl_->last_motion;
 }
 
 }  // namespace robstride_driver::test

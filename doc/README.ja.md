@@ -180,7 +180,8 @@ active中は送信経路も監視します。CAN bridgeの送信topic endpoint�
 
 effortにも同じ理想transmission変換を適用します。モーターへのeffort指令はROS joint effortを`gear_ratio`で割り、ROS jointへ返すfeedback effortはモーター側effortに`gear_ratio`を掛けます。`direction`は両方向の変換に適用されます。transmission効率は考慮しません。
 
-任意指定の`command_*`は、型番固有のCAN encode範囲を変更せず、ロボットの運用範囲を狭めるための制限です。値はROS joint座標で指定します。有限値でない、最小値と最大値が逆、または`direction`・`gear_ratio`・`position_offset`の変換後にCAN範囲外となる設定は、configure時に拒否されます。
+任意指定の`command_*`は、型番固有のCAN encode範囲を変更せず、ロボットの運用範囲を狭めるための制限です。値はROS joint座標で指定します。有限値でない、最小値と最大値が逆、または`direction`・`gear_ratio`・`position_offset`の変換後にCAN範囲外となる設定は、設定読み込み時に拒否されます。
+速度・トルクの範囲（運用制限とCAN範囲の両方）は、有効化時や中立のゼロ指令が非ゼロにクランプされないよう、ゼロを含む必要があります。ゼロが範囲の端でも構いません。位置範囲にはこの条件はありません。
 
 各jointは3つのcommand interfaceと、position・velocity・effortのstate interfaceをすべてexportする必要があります。`temperature`と`fault`は省略できます。
 

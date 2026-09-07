@@ -225,6 +225,9 @@ without changing the motor model's CAN encoding ranges. They are expressed in
 ROS joint coordinates. Configuration fails if a limit is non-finite, reversed,
 or falls outside the corresponding CAN range after applying `direction`,
 `gear_ratio`, and `position_offset`.
+Velocity and effort ranges (both operational limits and CAN ranges) must include
+zero so activation and neutral commands cannot be clamped to a nonzero target.
+Zero may be either boundary. Position ranges do not have this requirement.
 
 Every joint must export all three command interfaces and the three required
 state interfaces. `temperature` and `fault` are optional state interfaces:
