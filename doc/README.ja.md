@@ -362,5 +362,5 @@ feedback、Run mode自動復帰、feedback timeout、停止確認が得られな
 
 ## 参考資料
 
-- [RobStride Product Information revision `6ad12f5`（2026年7月14日）](https://github.com/RobStride/Product_Information/tree/6ad12f50006273b7ea4eea88980f927d97c22f0d)
+- [RobStride Product Information revision `6ad12f5`（2026年9月9日）](https://github.com/RobStride/Product_Information/tree/6ad12f50006273b7ea4eea88980f927d97c22f0d)
 - [`ros2_socketcan`](https://github.com/autowarefoundation/ros2_socketcan)
