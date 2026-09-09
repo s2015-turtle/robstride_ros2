@@ -153,7 +153,7 @@ description.
 | `host_can_id` | `253` | Host CAN ID in the range `0..255` |
 | `can_tx_topic` | `to_can_bus` | Outgoing `can_msgs/msg/Frame` topic |
 | `can_rx_topic` | `from_can_bus` | Incoming `can_msgs/msg/Frame` topic |
-| `can_rx_qos_depth` | `32` | Reliable, volatile feedback QoS depth; increase for large motor groups |
+| `can_rx_qos_depth` | `32` | Reliable, volatile feedback QoS depth (`1`–`4096`); increase for large motor groups |
 | `feedback_timeout_ms` | `3000` | Maximum time without motor feedback before returning ERROR |
 | `fail_on_feedback_timeout` | `true` | Stop the hardware when feedback times out |
 | `transmit_failure_timeout_ms` | `1000` | Grace period before a missing transmit endpoint or stalled sender returns ERROR |
@@ -219,6 +219,14 @@ Effort follows the same ideal transmission convention: motor command effort is
 ROS joint effort divided by `gear_ratio`, and ROS joint feedback effort is motor
 feedback effort multiplied by `gear_ratio`. `direction` is applied to both
 directions of the conversion. Transmission efficiency is not modeled.
+
+Numeric parameters must contain a complete, finite value; trailing text and
+embedded whitespace are rejected. Surrounding whitespace and a leading `+` are
+accepted. Integer parameters reject a minus sign, including `-0`. CAN IDs and
+`can_timeout_ticks` retain decimal, `0x` hexadecimal, and leading-zero octal
+notation; other integer parameters are decimal. Timeouts and retry counts are
+limited to `2147483647`; only the shutdown interval and shutdown confirmation
+timeout permit zero. `can_timeout_ticks` must be `1`–`4294967295`.
 
 The optional `command_*` limits let a robot use a narrower operating envelope
 without changing the motor model's CAN encoding ranges. They are expressed in

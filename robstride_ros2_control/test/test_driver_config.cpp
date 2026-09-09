@@ -50,6 +50,112 @@ hardware_interface::HardwareInfo valid_hardware_info()
 }
 }  // namespace
 
+TEST(DriverConfig, StrictlyParsesAllJointNumbersWithContext)
+{
+  for (const auto * key : {
+      "position_min", "position_max", "velocity_min", "velocity_max", "effort_min",
+      "effort_max", "effort_wire_min", "effort_wire_max", "kp_max", "kd_max", "kp", "kd",
+      "direction", "gear_ratio", "position_offset", "command_position_min",
+      "command_position_max", "command_velocity_min", "command_velocity_max",
+      "command_effort_min", "command_effort_max"})
+  {
+    for (const auto * value : {"20oops", "", "   ", "1 2", "nan", "inf", "-inf", "1e9999"}) {
+      auto hardware = valid_hardware_info();
+      hardware.joints[0].parameters[key] = value;
+      SCOPED_TRACE(::testing::Message() << key << "=" << value);
+      try {
+        rs::parse_driver_configuration(hardware);
+        FAIL() << "accepted malformed number";
+      } catch (const std::runtime_error & error) {
+        const std::string message = error.what();
+        EXPECT_NE(message.find(key), std::string::npos);
+        EXPECT_NE(message.find("joint_1"), std::string::npos);
+        EXPECT_NE(message.find("test_system"), std::string::npos);
+      }
+    }
+  }
+}
+
+TEST(DriverConfig, StrictlyParsesHardwareIntegersWithContext)
+{
+  for (const auto * key : {
+      "host_can_id", "can_rx_qos_depth", "feedback_timeout_ms", "transmit_failure_timeout_ms",
+      "run_mode_recovery_timeout_ms", "run_mode_recovery_retry_interval_ms",
+      "shutdown_stop_repetitions", "shutdown_stop_interval_ms", "shutdown_confirmation_timeout_ms",
+      "startup_connection_timeout_ms", "startup_confirmation_timeout_ms", "startup_retries"})
+  {
+    for (const auto * value : {
+        "1oops", "-1", "-0", "1.5", "", " ", "1 2", "nan", "inf", "18446744073709551616"})
+    {
+      auto hardware = valid_hardware_info();
+      hardware.hardware_parameters[key] = value;
+      SCOPED_TRACE(::testing::Message() << key << "=" << value);
+      try {
+        rs::parse_driver_configuration(hardware);
+        FAIL() << "accepted malformed integer";
+      } catch (const std::runtime_error & error) {
+        EXPECT_NE(std::string(error.what()).find(key), std::string::npos);
+        EXPECT_NE(std::string(error.what()).find("test_system"), std::string::npos);
+      }
+    }
+  }
+}
+
+TEST(DriverConfig, StrictlyParsesJointIntegers)
+{
+  for (const auto * key : {"can_id", "can_timeout_ticks"}) {
+    for (const auto * value : {"1oops", "-1", "-0", "1.5", "0x1g", "", "4294967296"}) {
+      auto hardware = valid_hardware_info();
+      hardware.joints[0].parameters[key] = value;
+      try {
+        rs::parse_driver_configuration(hardware);
+        FAIL() << key << "=" << value;
+      } catch (const std::runtime_error & error) {
+        EXPECT_NE(std::string(error.what()).find(key), std::string::npos);
+        EXPECT_NE(std::string(error.what()).find("joint_1"), std::string::npos);
+      }
+    }
+  }
+}
+
+TEST(DriverConfig, AcceptsWhitespaceSignsAndDocumentedBases)
+{
+  auto hardware = valid_hardware_info();
+  hardware.hardware_parameters["host_can_id"] = " \t+0xFD\n";
+  hardware.hardware_parameters["startup_retries"] = " 010 ";
+  hardware.joints[0].parameters["can_id"] = " 0377 ";
+  hardware.joints[0].parameters["can_timeout_ticks"] = " 0xffffffff ";
+  hardware.joints[0].parameters["kp"] = " +3e1 ";
+  hardware.joints[0].parameters["position_offset"] = " -0.5 ";
+  const auto config = rs::parse_driver_configuration(hardware);
+  EXPECT_EQ(config.settings.host_id, 253);
+  EXPECT_EQ(config.settings.startup_retries, 10);
+  EXPECT_EQ(config.joints[0].can_id, 255);
+  EXPECT_EQ(config.joints[0].can_timeout_ticks, std::numeric_limits<uint32_t>::max());
+  EXPECT_DOUBLE_EQ(config.joints[0].kp, 30.0);
+  EXPECT_DOUBLE_EQ(config.joints[0].position_offset, -0.5);
+}
+
+TEST(DriverConfig, EnforcesQosAndIntegerBounds)
+{
+  auto hardware = valid_hardware_info();
+  for (const auto * value : {"0", "4097", "18446744073709551615"}) {
+    hardware.hardware_parameters["can_rx_qos_depth"] = value;
+    EXPECT_THROW(rs::parse_driver_configuration(hardware), std::runtime_error);
+  }
+  for (const auto * value : {"1", "4096"}) {
+    hardware.hardware_parameters["can_rx_qos_depth"] = value;
+    EXPECT_NO_THROW(rs::parse_driver_configuration(hardware));
+  }
+  hardware.hardware_parameters["startup_retries"] = "2147483648";
+  EXPECT_THROW(rs::parse_driver_configuration(hardware), std::runtime_error);
+  hardware.hardware_parameters["startup_retries"] = "2147483647";
+  hardware.hardware_parameters["shutdown_stop_interval_ms"] = "0";
+  hardware.hardware_parameters["shutdown_confirmation_timeout_ms"] = "0";
+  hardware.hardware_parameters["host_can_id"] = "0";
+  EXPECT_NO_THROW(rs::parse_driver_configuration(hardware));
+}
+
 TEST(DriverConfig, RejectsNeutralRangesExcludingZero)
 {
   for (const std::string prefix : {
