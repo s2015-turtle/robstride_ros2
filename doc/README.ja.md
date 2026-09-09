@@ -124,7 +124,7 @@ ros2 topic pub --rate 20 \
 | `host_can_id` | `253` | host CAN ID。範囲は`0..255` |
 | `can_tx_topic` | `to_can_bus` | 送信する`can_msgs/msg/Frame` topic |
 | `can_rx_topic` | `from_can_bus` | 受信する`can_msgs/msg/Frame` topic |
-| `can_rx_qos_depth` | `32` | reliable・volatileなfeedback QoS depth。多数のモーターを使う場合は増加を検討 |
+| `can_rx_qos_depth` | `32` | reliable・volatileなfeedback QoS depth（`1`〜`4096`）。多数のモーターを使う場合は増加を検討 |
 | `feedback_timeout_ms` | `3000` | feedbackを受信できない状態でERRORを返すまでの時間 |
 | `fail_on_feedback_timeout` | `true` | feedback timeout時にHardwareを停止 |
 | `transmit_failure_timeout_ms` | `1000` | 送信endpointの消失またはsender停滞をERRORにするまでの猶予時間 |
@@ -179,6 +179,8 @@ active中は送信経路も監視します。CAN bridgeの送信topic endpoint�
 `gear_ratio`は、robot側に追加されたtransmissionの変換比です。アクチュエータ内蔵減速機の減速比ではありません。private protocolの角度がROS jointとして使用する出力軸角度を表す場合は、`1.0`のまま使用してください。
 
 effortにも同じ理想transmission変換を適用します。モーターへのeffort指令はROS joint effortを`gear_ratio`で割り、ROS jointへ返すfeedback effortはモーター側effortに`gear_ratio`を掛けます。`direction`は両方向の変換に適用されます。transmission効率は考慮しません。
+
+数値パラメータは全体が有限の数値である必要があります。末尾の余計な文字や途中の空白は拒否し、前後の空白と先頭の`+`は許可します。整数パラメータの負号（`-0`を含む）は拒否します。CAN IDと`can_timeout_ticks`は従来どおり10進、`0x`付き16進、先頭ゼロ付き8進表記に対応し、それ以外の整数は10進表記です。タイムアウト・試行回数の上限は`2147483647`で、終了時の送信間隔と停止確認タイムアウトのみゼロを許可します。`can_timeout_ticks`の範囲は`1`〜`4294967295`です。
 
 任意指定の`command_*`は、型番固有のCAN encode範囲を変更せず、ロボットの運用範囲を狭めるための制限です。値はROS joint座標で指定します。有限値でない、最小値と最大値が逆、または`direction`・`gear_ratio`・`position_offset`の変換後にCAN範囲外となる設定は、設定読み込み時に拒否されます。
 速度・トルクの範囲（運用制限とCAN範囲の両方）は、有効化時や中立のゼロ指令が非ゼロにクランプされないよう、ゼロを含む必要があります。ゼロが範囲の端でも構いません。位置範囲にはこの条件はありません。
