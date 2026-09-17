@@ -9,13 +9,17 @@ namespace rs = robstride_driver;
 namespace detail = robstride_driver;
 using namespace std::chrono_literals;
 
-TEST(CommandLimits, ClampsPositionVelocityAndEffort)
+TEST(CommandLimits, RejectsOutOfRangeAndNonFiniteValues)
 {
   const rs::CommandLimits limits{-1.0, 2.0, -3.0, 4.0, -5.0, 6.0};
-  EXPECT_DOUBLE_EQ(limits.clamp_position(-2.0), -1.0);
-  EXPECT_DOUBLE_EQ(limits.clamp_position(1.0), 1.0);
-  EXPECT_DOUBLE_EQ(limits.clamp_velocity(5.0), 4.0);
-  EXPECT_DOUBLE_EQ(limits.clamp_effort(-6.0), -5.0);
+  EXPECT_FALSE(limits.contains_position(-2.0));
+  EXPECT_TRUE(limits.contains_position(-1.0));
+  EXPECT_TRUE(limits.contains_position(2.0));
+  EXPECT_FALSE(limits.contains_velocity(5.0));
+  EXPECT_TRUE(limits.contains_velocity(4.0));
+  EXPECT_FALSE(limits.contains_effort(-6.0));
+  EXPECT_TRUE(limits.contains_effort(-5.0));
+  EXPECT_FALSE(limits.contains_position(std::numeric_limits<double>::quiet_NaN()));
 }
 
 TEST(JointData, ConvertsEffortBetweenJointAndMotorCoordinates)

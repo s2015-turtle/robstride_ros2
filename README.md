@@ -237,6 +237,18 @@ Velocity and effort ranges (both operational limits and CAN ranges) must include
 zero so activation and neutral commands cannot be clamped to a nonzero target.
 Zero may be either boundary. Position ranges do not have this requirement.
 
+Position control activation requires recent, finite position feedback inside
+`command_position_min/max`. This is checked both when preparing and when applying
+the mode switch; a rejected switch leaves the previous mode unchanged. The
+initial position target is the latest measured position, not a limit boundary.
+The feedback must be newer than `feedback_timeout_ms` even if
+`fail_on_feedback_timeout` is disabled.
+Once active, a position, velocity, or effort command outside its `command_*`
+range (or the transformed motor range) is rejected, never clamped. The entire
+multi-joint CAN command batch is withheld, queued motion commands are cleared,
+and `write()` returns an error to ros2_control. Correct the command and
+reactivate the hardware/controller; do not rely on a clipped target.
+
 Every joint must export all three command interfaces and the three required
 state interfaces. `temperature` and `fault` are optional state interfaces:
 

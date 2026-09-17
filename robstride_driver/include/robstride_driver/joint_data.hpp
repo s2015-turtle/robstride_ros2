@@ -1,6 +1,5 @@
 #pragma once
 
-#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -37,19 +36,19 @@ struct CommandLimits
   double effort_min{0.0};
   double effort_max{0.0};
 
-  double clamp_position(double value) const noexcept
+  bool contains_position(double value) const noexcept
   {
-    return std::clamp(value, position_min, position_max);
+    return std::isfinite(value) && position_min <= value && value <= position_max;
   }
 
-  double clamp_velocity(double value) const noexcept
+  bool contains_velocity(double value) const noexcept
   {
-    return std::clamp(value, velocity_min, velocity_max);
+    return std::isfinite(value) && velocity_min <= value && value <= velocity_max;
   }
 
-  double clamp_effort(double value) const noexcept
+  bool contains_effort(double value) const noexcept
   {
-    return std::clamp(value, effort_min, effort_max);
+    return std::isfinite(value) && effort_min <= value && value <= effort_max;
   }
 };
 

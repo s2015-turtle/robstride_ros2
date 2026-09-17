@@ -1,6 +1,5 @@
 #include "robstride_ros2_control/robstride_system.hpp"
 
-#include <algorithm>
 #include <memory>
 #include <stdexcept>
 #include <utility>
@@ -182,18 +181,19 @@ hardware_interface::return_type RobStrideSystem::prepare_command_mode_switch(
     return hardware_interface::return_type::ERROR;
   }
 
-  const auto feedback = impl_->driver.feedback_received();
-  const auto & joints = impl_->driver.joints();
-  for (size_t index = 0; index < joints.size(); ++index) {
-    if (!feedback[index] &&
-      std::find(start.begin(), start.end(), joints[index].name + "/position") != start.end())
-    {
-      RCLCPP_ERROR(
-        rclcpp::get_logger("RobStrideSystem"),
-        "Cannot start position command interface for '%s' before first feedback",
-        joints[index].name.c_str());
-      return hardware_interface::return_type::ERROR;
-    }
+  const auto resulting_states = command_modes_after_switch(
+    current_command_modes(impl_->driver), start, stop);
+  std::vector<robstride_driver::ClaimedInterfaces> modes;
+  modes.reserve(resulting_states.size());
+  for (const auto & state : resulting_states) {
+    modes.push_back(robstride_driver::ClaimedInterfaces{
+      state.position_active, state.velocity_active, state.effort_active});
+  }
+  if (!impl_->driver.validate_command_modes(modes, &validation_error)) {
+    RCLCPP_ERROR(
+      rclcpp::get_logger("RobStrideSystem"), "Command mode switch rejected: %s",
+      validation_error.c_str());
+    return hardware_interface::return_type::ERROR;
   }
   return hardware_interface::return_type::OK;
 }
@@ -209,8 +209,14 @@ hardware_interface::return_type RobStrideSystem::perform_command_mode_switch(
     modes.push_back(robstride_driver::ClaimedInterfaces{
       state.position_active, state.velocity_active, state.effort_active});
   }
-  return impl_->driver.apply_command_modes(modes) ?
-         hardware_interface::return_type::OK : hardware_interface::return_type::ERROR;
+  std::string validation_error;
+  if (!impl_->driver.apply_command_modes(modes, &validation_error)) {
+    RCLCPP_ERROR(
+      rclcpp::get_logger("RobStrideSystem"), "Command mode switch rejected: %s",
+      validation_error.c_str());
+    return hardware_interface::return_type::ERROR;
+  }
+  return hardware_interface::return_type::OK;
 }
 
 }  // namespace robstride_ros2_control
