@@ -231,7 +231,7 @@ void test_command_limits_reject_without_clamping()
   require(frame->data[0] == rs::encode_u16(-0.5, kLimits.position_min, kLimits.position_max) >> 8,
     "initial motor target was not the measured position");
 
-  driver.joints()[0].command.position = 1.5;
+  driver.joints()[0].command.position = 2.5;
   const auto before_invalid = motor.motion_count();
   require(!driver.send_commands(), "out-of-range position command was accepted");
   require(!driver.send_commands(), "rejected command was silently retried");
