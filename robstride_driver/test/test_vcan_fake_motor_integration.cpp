@@ -206,8 +206,8 @@ void test_command_limits_reject_without_clamping()
   open_and_start(driver);
 
   const rs::ClaimedInterfaces position{true, false, false};
-  motor.report_position(-2.5, kLimits);  // ROS joint position = 1.5 rad.
-  require(wait_until([&]() {return driver.joints()[0].feedback.position > 1.4;}),
+  motor.report_position(-4.5, kLimits);  // ROS joint position = 2.5 rad.
+  require(wait_until([&]() {return driver.joints()[0].feedback.position > 2.4;}),
     "out-of-range feedback was not received");
   const auto before_activation = motor.motion_count();
   require(!driver.apply_command_modes({position}),
