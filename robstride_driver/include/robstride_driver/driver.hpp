@@ -40,7 +40,10 @@ public:
   bool send_commands();
   std::vector<ClaimedInterfaces> command_modes() const;
   std::vector<bool> feedback_received() const;
-  bool apply_command_modes(const std::vector<ClaimedInterfaces> & modes);
+  bool validate_command_modes(
+    const std::vector<ClaimedInterfaces> & modes, std::string * error = nullptr) const;
+  bool apply_command_modes(
+    const std::vector<ClaimedInterfaces> & modes, std::string * error = nullptr);
   DriverMetrics metrics() const;
 
 private:
@@ -66,6 +69,8 @@ private:
   void disable_all();
   void log_runtime_events();
   bool check_transport_health();
+  bool validate_command_modes_locked(
+    const std::vector<ClaimedInterfaces> & modes, std::string * error) const;
   void reset_metrics();
   void record_feedback(
     size_t joint_index, std::chrono::steady_clock::time_point now,
@@ -87,6 +92,7 @@ private:
   std::vector<CanTransport::MotorFrame> command_snapshot_;
   std::vector<CanTransport::RecoveryUpdate> recovery_updates_;
   std::atomic<bool> active_{false};
+  std::atomic<bool> command_rejected_{false};
   std::chrono::steady_clock::time_point activated_at_{};
   std::shared_ptr<rclcpp::Clock> log_clock_;
   std::unique_ptr<CanTransport> transport_;

@@ -194,6 +194,75 @@ void test_feedback_timeout()
   driver.close();
 }
 
+void test_command_limits_reject_without_clamping()
+{
+  auto motor = make_fake_motor();
+  rs::RobStrideDriver driver(rclcpp::get_logger("vcan_command_limits"));
+  auto config = configuration("vcan_command_limits");
+  config.joints[0].direction = -1.0;
+  config.joints[0].gear_ratio = 2.0;
+  config.joints[0].position_offset = 0.25;
+  require(driver.initialize(config), "transformed configuration was rejected");
+  open_and_start(driver);
+
+  const rs::ClaimedInterfaces position{true, false, false};
+  motor.report_position(-2.5, kLimits);  // ROS joint position = 1.5 rad.
+  require(wait_until([&]() {return driver.joints()[0].feedback.position > 1.4;}),
+    "out-of-range feedback was not received");
+  const auto before_activation = motor.motion_count();
+  require(!driver.apply_command_modes({position}),
+    "position mode accepted out-of-range feedback");
+  require(!driver.command_modes()[0].position, "rejected mode changed the claim");
+  require(motor.motion_count() == before_activation, "rejected activation emitted motion");
+
+  motor.report_position(-0.5, kLimits);  // ROS joint position = 0.5 rad.
+  require(wait_until([&]() {
+    return std::abs(driver.joints()[0].feedback.position - 0.5) < 0.01;
+  }), "in-range feedback was not received");
+  require(driver.apply_command_modes({position}), "valid position mode was rejected");
+  require(std::abs(driver.joints()[0].command.position - 0.5) < 0.01,
+    "initial target was not the latest transformed feedback");
+  const auto before_valid = motor.motion_count();
+  require(driver.send_commands(), "valid position command failed");
+  require(wait_until([&]() {return motor.motion_count() > before_valid;}),
+    "valid position command was not transmitted");
+  const auto frame = motor.last_motion_frame();
+  require(frame.has_value(), "valid position frame missing");
+  require(frame->data[0] == rs::encode_u16(-0.5, kLimits.position_min, kLimits.position_max) >> 8,
+    "initial motor target was not the measured position");
+
+  driver.joints()[0].command.position = 1.5;
+  const auto before_invalid = motor.motion_count();
+  require(!driver.send_commands(), "out-of-range position command was accepted");
+  require(!driver.send_commands(), "rejected command was silently retried");
+  require(motor.motion_count() == before_invalid, "rejected command was clamped and sent");
+  driver.stop();
+  driver.close();
+}
+
+void test_velocity_and_effort_rejection()
+{
+  for (const bool velocity_mode : {true, false}) {
+    auto motor = make_fake_motor();
+    const std::string name = velocity_mode ? "vcan_velocity_reject" : "vcan_effort_reject";
+    rs::RobStrideDriver driver(rclcpp::get_logger(name));
+    require(driver.initialize(configuration(name)), "command rejection setup failed");
+    open_and_start(driver);
+    require(driver.apply_command_modes({rs::ClaimedInterfaces{false, velocity_mode, !velocity_mode}}),
+      "velocity/effort mode was rejected");
+    if (velocity_mode) {
+      driver.joints()[0].command.velocity = 10.1;
+    } else {
+      driver.joints()[0].command.effort = -3.1;
+    }
+    const auto before = motor.motion_count();
+    require(!driver.send_commands(), "out-of-range velocity/effort was accepted");
+    require(motor.motion_count() == before, "out-of-range velocity/effort was transmitted");
+    driver.stop();
+    driver.close();
+  }
+}
+
 void test_parameter_confirmation_failure()
 {
   auto motor = make_fake_motor();
@@ -267,6 +336,8 @@ int main(int argc, char ** argv)
     test_complete_lifecycle_and_recovery();
     test_neutral_commands_after_mode_activation();
     test_feedback_timeout();
+    test_command_limits_reject_without_clamping();
+    test_velocity_and_effort_rejection();
     test_parameter_confirmation_failure();
     test_missing_stop_confirmation();
     test_concurrent_control_recovery_and_shutdown();

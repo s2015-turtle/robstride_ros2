@@ -185,6 +185,8 @@ effortにも同じ理想transmission変換を適用します。モーターへ�
 任意指定の`command_*`は、型番固有のCAN encode範囲を変更せず、ロボットの運用範囲を狭めるための制限です。値はROS joint座標で指定します。有限値でない、最小値と最大値が逆、または`direction`・`gear_ratio`・`position_offset`の変換後にCAN範囲外となる設定は、設定読み込み時に拒否されます。
 速度・トルクの範囲（運用制限とCAN範囲の両方）は、有効化時や中立のゼロ指令が非ゼロにクランプされないよう、ゼロを含む必要があります。ゼロが範囲の端でも構いません。位置範囲にはこの条件はありません。
 
+位置制御の有効化には、新しく受信した有限の位置フィードバックが`command_position_min/max`内にあることが必要です。切替の準備時と実行時に確認し、拒否された場合は以前のモードを維持します。`fail_on_feedback_timeout`を無効にしていても、位置切替には`feedback_timeout_ms`以内のフィードバックが必要です。最初の位置目標には最新の実測位置を使用し、範囲の境界へ丸めません。動作中も位置・速度・トルクの指令が`command_*`範囲または変換後のモーター範囲を超えた場合、クランプせず、全joint分のCAN指令を送信せずに`write()`からros2_controlへエラーを返します。指令を修正してhardware/controllerを再有効化してください。
+
 各jointは3つのcommand interfaceと、position・velocity・effortのstate interfaceをすべてexportする必要があります。`temperature`と`fault`は省略できます。
 
 ```xml

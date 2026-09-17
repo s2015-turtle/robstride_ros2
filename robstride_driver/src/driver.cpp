@@ -162,6 +162,7 @@ bool RobStrideDriver::start()
   }
   transport_->enable_active_commands();
   activated_at_ = std::chrono::steady_clock::now();
+  command_rejected_ = false;
   active_ = true;
   return true;
 }
@@ -246,7 +247,9 @@ bool RobStrideDriver::update_state()
 
 bool RobStrideDriver::send_commands()
 {
+  if (command_rejected_) {return false;}
   if (!active_) {return true;}
+  std::string rejection;
   {
     // command_snapshot_ is fixed-size after initialize(). The ros2_control write callback is its
     // sole producer; state_mutex_ is released before the batch takes the transport queue lock.
@@ -254,25 +257,73 @@ bool RobStrideDriver::send_commands()
     if (!active_) {return true;}
     for (size_t joint_index = 0; joint_index < joints_.size(); ++joint_index) {
       const auto & joint = joints_[joint_index];
-      const double joint_position =
-        joint.claimed.position && std::isfinite(joint.command.position) ?
-        joint.command_limits.clamp_position(joint.command.position) :
-        joint.command_limits.clamp_position(joint.state.position);
-      const double motor_position = std::isfinite(joint_position) ?
-        joint.direction * (joint_position - joint.position_offset) * joint.gear_ratio : 0.0;
-      const double motor_velocity =
-        joint.claimed.velocity && std::isfinite(joint.command.velocity) ?
-        joint.direction * joint.command_limits.clamp_velocity(joint.command.velocity) *
-        joint.gear_ratio : 0.0;
-      const double motor_effort =
-        joint.claimed.effort && std::isfinite(joint.command.effort) ?
-        joint.joint_to_motor_effort(joint.command_limits.clamp_effort(joint.command.effort)) :
+      const auto reject = [&](const char * name, double value, double minimum, double maximum) {
+          rejection = "Joint '" + joint.name + "': " + name + " command " +
+            std::to_string(value) + " is outside [" + std::to_string(minimum) + ", " +
+            std::to_string(maximum) + "]";
+        };
+      if (joint.claimed.position &&
+        !joint.command_limits.contains_position(joint.command.position))
+      {
+        reject("position", joint.command.position, joint.command_limits.position_min,
+          joint.command_limits.position_max);
+        break;
+      }
+      if (joint.claimed.velocity &&
+        !joint.command_limits.contains_velocity(joint.command.velocity))
+      {
+        reject("velocity", joint.command.velocity, joint.command_limits.velocity_min,
+          joint.command_limits.velocity_max);
+        break;
+      }
+      if (joint.claimed.effort && !joint.command_limits.contains_effort(joint.command.effort)) {
+        reject("effort", joint.command.effort, joint.command_limits.effort_min,
+          joint.command_limits.effort_max);
+        break;
+      }
+      // An unclaimed position interface has no position target; kp=0 makes this neutral.
+      const double motor_position = joint.claimed.position ?
+        joint.direction * (joint.command.position - joint.position_offset) * joint.gear_ratio :
         0.0;
+      const double motor_velocity =
+        joint.claimed.velocity ? joint.direction * joint.command.velocity * joint.gear_ratio : 0.0;
+      const double motor_effort =
+        joint.claimed.effort ? joint.joint_to_motor_effort(joint.command.effort) : 0.0;
+      if (joint.claimed.position &&
+        (!std::isfinite(motor_position) || motor_position < joint.limits.position_min ||
+        motor_position > joint.limits.position_max))
+      {
+        reject("motor position", motor_position, joint.limits.position_min,
+          joint.limits.position_max);
+        break;
+      }
+      if (!std::isfinite(motor_velocity) || motor_velocity < joint.limits.velocity_min ||
+        motor_velocity > joint.limits.velocity_max)
+      {
+        reject("motor velocity", motor_velocity, joint.limits.velocity_min,
+          joint.limits.velocity_max);
+        break;
+      }
+      if (!std::isfinite(motor_effort) || motor_effort < joint.limits.effort_min ||
+        motor_effort > joint.limits.effort_max || motor_effort < joint.limits.effort_wire_min ||
+        motor_effort > joint.limits.effort_wire_max)
+      {
+        reject("motor effort", motor_effort,
+          std::max(joint.limits.effort_min, joint.limits.effort_wire_min),
+          std::min(joint.limits.effort_max, joint.limits.effort_wire_max));
+        break;
+      }
       const double kp = joint.claimed.position ? joint.kp : 0.0;
       const double kd = (joint.claimed.position || joint.claimed.velocity) ? joint.kd : 0.0;
       command_snapshot_[joint_index].frame = make_motion_command(
         joint.can_id, joint.limits, motor_position, motor_velocity, motor_effort, kp, kd);
     }
+  }
+  if (!rejection.empty()) {
+    RCLCPP_ERROR(logger_, "%s; rejecting the complete command batch", rejection.c_str());
+    command_rejected_ = true;
+    transport_->disable_active_commands();
+    return false;
   }
   transport_->queue_motion_frames(command_snapshot_);
   return check_transport_health();
@@ -335,15 +386,65 @@ std::vector<bool> RobStrideDriver::feedback_received() const
   return received;
 }
 
-bool RobStrideDriver::apply_command_modes(const std::vector<ClaimedInterfaces> & modes)
+bool RobStrideDriver::validate_command_modes_locked(
+  const std::vector<ClaimedInterfaces> & modes, std::string * error) const
+{
+  if (modes.size() != joints_.size()) {
+    if (error) {*error = "Command mode count does not match joint count";}
+    return false;
+  }
+  const auto now = std::chrono::steady_clock::now();
+  for (size_t index = 0; index < joints_.size(); ++index) {
+    const auto & joint = joints_[index];
+    if (joint.claimed.position || !modes[index].position) {continue;}
+    const auto & status = joint.feedback_status;
+    const double position = joint.feedback.position;
+    if (!status.received || status.timestamp > now ||
+      now - status.timestamp > settings_.feedback_timeout)
+    {
+      if (error) {*error = "Joint '" + joint.name + "': position activation requires fresh feedback";}
+      return false;
+    }
+    if (!joint.command_limits.contains_position(position)) {
+      if (error) {
+        *error = "Joint '" + joint.name + "': measured position " +
+          std::to_string(position) + " is outside command_position_min/max [" +
+          std::to_string(joint.command_limits.position_min) + ", " +
+          std::to_string(joint.command_limits.position_max) + "]";
+      }
+      return false;
+    }
+    const double motor_position =
+      joint.direction * (position - joint.position_offset) * joint.gear_ratio;
+    if (!std::isfinite(motor_position) || motor_position < joint.limits.position_min ||
+      motor_position > joint.limits.position_max)
+    {
+      if (error) {*error = "Joint '" + joint.name + "': measured position exceeds motor range";}
+      return false;
+    }
+  }
+  return true;
+}
+
+bool RobStrideDriver::validate_command_modes(
+  const std::vector<ClaimedInterfaces> & modes, std::string * error) const
 {
   std::lock_guard<std::mutex> lock(state_mutex_);
-  if (modes.size() != joints_.size()) {return false;}
+  return validate_command_modes_locked(modes, error);
+}
+
+bool RobStrideDriver::apply_command_modes(
+  const std::vector<ClaimedInterfaces> & modes, std::string * error)
+{
+  std::lock_guard<std::mutex> lock(state_mutex_);
+  if (!validate_command_modes_locked(modes, error)) {return false;}
   for (size_t index = 0; index < joints_.size(); ++index) {
     auto & joint = joints_[index];
     const auto previous = joint.claimed;
     joint.claimed = modes[index];
-    if (!previous.position && joint.claimed.position) {joint.command.position = joint.state.position;}
+    if (!previous.position && joint.claimed.position) {
+      joint.command.position = joint.feedback.position;
+    }
     if (!previous.velocity && joint.claimed.velocity) {joint.command.velocity = 0.0;}
     if (!previous.effort && joint.claimed.effort) {joint.command.effort = 0.0;}
   }

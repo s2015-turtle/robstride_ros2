@@ -206,6 +206,12 @@ void FakeRobStrideMotor::report_reset()
   impl_->send_feedback();
 }
 
+void FakeRobStrideMotor::report_position(double motor_position, const Limits & limits)
+{
+  impl_->position_raw = encode_u16(motor_position, limits.position_min, limits.position_max);
+  impl_->send_feedback();
+}
+
 uint8_t FakeRobStrideMotor::mode() const {return impl_->mode.load();}
 uint64_t FakeRobStrideMotor::enable_count() const {return impl_->enable_count.load();}
 uint64_t FakeRobStrideMotor::motion_count() const {return impl_->motion_count.load();}
