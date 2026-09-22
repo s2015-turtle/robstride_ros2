@@ -25,7 +25,7 @@
       <param name="run_mode_recovery_timeout_ms">500</param>
       <param name="run_mode_recovery_retry_interval_ms">100</param>
       <param name="clear_faults_on_activate">true</param>
-      <param name="set_zero_on_activate">false</param>
+      <param name="set_zero_on_activate">true</param>
       <param name="shutdown_stop_repetitions">3</param>
       <param name="shutdown_stop_interval_ms">20</param>
       <param name="shutdown_confirmation_timeout_ms">300</param>

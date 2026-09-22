@@ -20,7 +20,7 @@ def generate_launch_description():
 
     socketcan = IncludeLaunchDescription(
         AnyLaunchDescriptionSource(str(socketcan_share / "launch/socket_can_bridge.launch.xml")),
-        launch_arguments={"interface": interface}.items(),
+        launch_arguments={"interface": interface, "receiver_interval_sec": "0.05"}.items(),
     )
     control_node = Node(
         package="controller_manager",
