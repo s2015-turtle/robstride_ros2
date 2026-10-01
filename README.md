@@ -451,8 +451,23 @@ CI additionally exercises both directions of the topic transport through
 `ros2_socketcan` and a Linux `vcan` interface. A simulated RobStride motor on
 that bus verifies startup parameter confirmation, enable and motion feedback,
 automatic Run-mode recovery, feedback timeout handling, and shutdown when stop
-confirmation is missing. These tests do not replace hardware-in-the-loop
-testing of timing or physical motor behavior.
+confirmation is missing. The fake keeps explicitly injected measured position
+separate from captured commands: it does not model motion or teleport the shaft
+when a zero-gain startup command arrives. Tests include startup outside operational
+position limits and successful command activation after measured position returns
+inside those limits.
+
+The fake simulates the configured CAN watchdog using a monotonic clock and
+50-microsecond ticks (20,000 ticks/second). Enable starts the deadline; addressed
+motion commands refresh it. Parameter reads and traffic addressed to other motor
+IDs do not. Expiry changes the fake to Reset and emits feedback if enabled.
+Two-motor scenarios independently drop one motor's commands or feedback, verify
+per-ID recovery routing, and check both settings of `fail_on_feedback_timeout`.
+Polling has bounded deadlines; driver and worker-thread cleanup is RAII-managed,
+including failed assertions. These software simulations are not hardware-in-the-loop
+tests, a firmware-conformance claim, or evidence of physical safety. Real watchdog
+timing, bus failures, motor dynamics, and safe mechanical behavior require hardware
+validation.
 
 ## License
 

@@ -21,12 +21,6 @@ namespace robstride_driver::test
 {
 namespace
 {
-uint16_t read_be16(const std::array<uint8_t, 8> & data, size_t offset)
-{
-  return static_cast<uint16_t>(
-    (static_cast<uint16_t>(data[offset]) << 8) | data[offset + 1]);
-}
-
 void put_be16(std::array<uint8_t, 8> & data, size_t offset, uint16_t value)
 {
   data[offset] = static_cast<uint8_t>(value >> 8);
@@ -52,11 +46,13 @@ struct FakeRobStrideMotor::Impl
     try {
       while (running) {
         can_frame raw{};
-        if (!socket.receive(raw, 20ms)) {continue;}
+        check_watchdog();
+        if (!socket.receive(raw, 2ms)) {continue;}
         if ((raw.can_id & CAN_EFF_FLAG) == 0 || raw.can_dlc != 8) {continue;}
         handle(raw.can_id & CAN_EFF_MASK, raw.data);
       }
     } catch (const std::exception & error) {
+      std::lock_guard<std::mutex> lock(state_mutex);
       worker_error = error.what();
       running = false;
     }
@@ -66,7 +62,7 @@ struct FakeRobStrideMotor::Impl
   {
     const uint8_t type = static_cast<uint8_t>((id >> 24) & 0x1f);
     const uint8_t destination = static_cast<uint8_t>(id & 0xff);
-    if (destination != options.motor_id) {return;}
+    if (destination != options.motor_id || !commands_enabled) {return;}
 
     std::array<uint8_t, 8> data{};
     std::copy(raw_data, raw_data + data.size(), data.begin());
@@ -79,6 +75,7 @@ struct FakeRobStrideMotor::Impl
         (static_cast<uint32_t>(data[7]) << 24);
       std::lock_guard<std::mutex> lock(state_mutex);
       parameters[index] = value;
+      if (index == kIndexCanTimeout) {watchdog_ticks = value;}
     } else if (type == kTypeReadParameter) {
       if (!parameter_confirmation_enabled) {return;}
       const uint16_t index = static_cast<uint16_t>(data[0]) |
@@ -91,8 +88,9 @@ struct FakeRobStrideMotor::Impl
       }
       send_parameter(index, value);
     } else if (type == kTypeEnable) {
-      ++enable_count;
       mode = kMotorModeRun;
+      last_command = std::chrono::steady_clock::now();
+      ++enable_count;
       send_feedback();
     } else if (type == kTypeStop) {
       ++stop_count;
@@ -106,10 +104,24 @@ struct FakeRobStrideMotor::Impl
         frame.data = data;
         last_motion = frame;
       }
+      // Commands are observations, not a physics model. In particular a
+      // zero-gain startup frame must not teleport the measured shaft position.
+      last_command = std::chrono::steady_clock::now();
       ++motion_count;
-      position_raw = read_be16(data, 0);
-      velocity_raw = read_be16(data, 2);
-      effort_raw = static_cast<uint16_t>((id >> 8) & 0xffff);
+      send_feedback();
+    }
+  }
+
+  void check_watchdog()
+  {
+    // Protocol timeout units: 20,000 ticks per second. Only the worker owns
+    // watchdog_ticks and last_command; wall-clock changes cannot affect expiry.
+    if (mode == kMotorModeRun && watchdog_ticks != 0 &&
+      std::chrono::steady_clock::now() - last_command >=
+      std::chrono::microseconds(static_cast<int64_t>(watchdog_ticks) * 50))
+    {
+      mode = kMotorModeReset;
+      ++watchdog_reset_count;
       send_feedback();
     }
   }
@@ -155,7 +167,11 @@ struct FakeRobStrideMotor::Impl
   FakeMotorOptions options;
   VcanSocket socket;
   std::atomic<bool> running{true};
+  std::atomic<bool> commands_enabled{true};
   std::atomic<bool> feedback_enabled{true};
+  uint32_t watchdog_ticks{0};
+  std::chrono::steady_clock::time_point last_command{};
+  std::atomic<uint64_t> watchdog_reset_count{0};
   std::atomic<bool> parameter_confirmation_enabled{true};
   std::atomic<bool> stop_confirmation_enabled{true};
   std::atomic<int64_t> response_delay_ms{0};
@@ -179,6 +195,11 @@ FakeRobStrideMotor::FakeRobStrideMotor(FakeMotorOptions options)
 }
 
 FakeRobStrideMotor::~FakeRobStrideMotor() = default;
+
+void FakeRobStrideMotor::set_commands_enabled(bool enabled)
+{
+  impl_->commands_enabled = enabled;
+}
 
 void FakeRobStrideMotor::set_feedback_enabled(bool enabled)
 {
@@ -216,6 +237,17 @@ uint8_t FakeRobStrideMotor::mode() const {return impl_->mode.load();}
 uint64_t FakeRobStrideMotor::enable_count() const {return impl_->enable_count.load();}
 uint64_t FakeRobStrideMotor::motion_count() const {return impl_->motion_count.load();}
 uint64_t FakeRobStrideMotor::stop_count() const {return impl_->stop_count.load();}
+
+uint64_t FakeRobStrideMotor::watchdog_reset_count() const
+{
+  return impl_->watchdog_reset_count.load();
+}
+
+void FakeRobStrideMotor::check_worker() const
+{
+  std::lock_guard<std::mutex> lock(impl_->state_mutex);
+  if (!impl_->worker_error.empty()) {throw std::runtime_error(impl_->worker_error);}
+}
 
 uint32_t FakeRobStrideMotor::parameter(uint16_t index) const
 {

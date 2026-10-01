@@ -26,6 +26,8 @@ public:
   FakeRobStrideMotor(const FakeRobStrideMotor &) = delete;
   FakeRobStrideMotor & operator=(const FakeRobStrideMotor &) = delete;
 
+  // Drop host frames for this motor only; other IDs on the bus are unaffected.
+  void set_commands_enabled(bool enabled);
   void set_feedback_enabled(bool enabled);
   void set_parameter_confirmation_enabled(bool enabled);
   void set_stop_confirmation_enabled(bool enabled);
@@ -37,6 +39,8 @@ public:
   uint64_t enable_count() const;
   uint64_t motion_count() const;
   uint64_t stop_count() const;
+  uint64_t watchdog_reset_count() const;
+  void check_worker() const;
   uint32_t parameter(uint16_t index) const;
   std::optional<Frame> last_motion_frame() const;
 

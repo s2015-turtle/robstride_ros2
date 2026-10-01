@@ -359,6 +359,11 @@ CIではLinuxの`vcan` interfaceと`ros2_socketcan`を使い、仮想RobStride�
 feedback、Run mode自動復帰、feedback timeout、停止確認が得られない場合のshutdownを
 確認します。物理CAN adapterやモーターを必要としませんが、実機のtimingやモーター
 動作を確認するhardware-in-the-loop testの代替ではありません。
+仮想モーターの測定位置は指令と分離し、zero-gain起動指令で位置を変更しません。
+monotonic clockと50µs単位の設定値でCAN watchdogを模擬し、指令消失でResetに移ります。
+2つのmotor IDで片側だけの通信障害、復帰先のrouting、feedback timeout設定の両動作、
+可動範囲外からの起動と通信再開を確認します。待機は期限付きで、失敗時もRAIIで終了処理します。
+これらはfirmware適合性や物理的安全性を保証するものではありません。
 
 ## License
 
