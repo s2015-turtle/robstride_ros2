@@ -80,3 +80,31 @@ TEST(CommandSafety, UsesLatestFeedbackAndPreservesModeOnRevalidationFailure)
   EXPECT_TRUE(driver.apply_command_modes(position));
   EXPECT_DOUBLE_EQ(driver.joints()[0].command.position, 1.0);
 }
+
+TEST(CommandSafety, PositionActivationAcceptsTransformedMotorBoundary)
+{
+  for (const double direction : {1.0, -1.0}) {
+    for (const double offset : {1.0, -1.0}) {
+      auto config = configuration();
+      auto & joint = config.joints[0];
+      joint.direction = direction;
+      joint.gear_ratio = 10.0;
+      joint.position_offset = offset;
+      joint.limits.position_min = -12.566370614;
+      joint.limits.position_max = 12.566370614;
+      const auto range = joint.joint_position_range();
+      ASSERT_TRUE(range);
+      joint.command_limits.position_min = range->first;
+      joint.command_limits.position_max = range->second;
+      rs::RobStrideDriver driver(rclcpp::get_logger("command_safety"));
+      ASSERT_TRUE(driver.initialize(config));
+      for (const double endpoint : {range->first, range->second}) {
+        ASSERT_TRUE(driver.apply_command_modes({rs::ClaimedInterfaces{}}));
+        set_feedback(driver, endpoint);
+        EXPECT_TRUE(driver.validate_command_modes({{true, false, false}}));
+        EXPECT_TRUE(driver.apply_command_modes({{true, false, false}}));
+        EXPECT_DOUBLE_EQ(driver.joints()[0].command.position, endpoint);
+      }
+    }
+  }
+}

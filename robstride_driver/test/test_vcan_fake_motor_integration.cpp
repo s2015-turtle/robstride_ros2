@@ -263,6 +263,47 @@ void test_velocity_and_effort_rejection()
   }
 }
 
+void test_transformed_position_boundaries()
+{
+  for (const double direction : {1.0, -1.0}) {
+    auto motor = make_fake_motor();
+    rs::RobStrideDriver driver(rclcpp::get_logger("vcan_position_boundaries"));
+    auto config = configuration("vcan_position_boundaries");
+    auto & joint = config.joints[0];
+    joint.direction = direction;
+    joint.gear_ratio = 10.0;
+    joint.position_offset = 1.0;
+    joint.limits.position_min = -12.566370614;
+    joint.limits.position_max = 12.566370614;
+    const auto range = joint.joint_position_range();
+    require(range.has_value(), "position range could not be represented");
+    joint.command_limits.position_min = range->first;
+    joint.command_limits.position_max = range->second;
+    joint.command_limits.velocity_min = -1.0;
+    joint.command_limits.velocity_max = 1.0;
+    require(driver.initialize(config), "boundary configuration failed");
+    open_and_start(driver);
+    require(driver.apply_command_modes({rs::ClaimedInterfaces{true, false, false}}),
+      "position mode activation failed");
+    for (const double endpoint : {range->first, range->second}) {
+      driver.joints()[0].command.position = endpoint;
+      const auto expected = rs::make_motion_command(
+        kMotorId, joint.limits, *joint.checked_joint_to_motor_position(endpoint),
+        0.0, 0.0, joint.kp, joint.kd);
+      require(driver.send_commands(), "valid boundary latched a command rejection");
+      require(wait_until([&]() {
+        const auto frame = motor.last_motion_frame();
+        return frame && frame->id == expected.id && frame->data == expected.data;
+      }), "boundary frame did not reach fake motor");
+    }
+    // A subsequent ordinary command confirms neither endpoint latched the batch error.
+    driver.joints()[0].command.position = joint.position_offset;
+    require(driver.send_commands(), "boundary command left the driver rejected");
+    driver.stop();
+    driver.close();
+  }
+}
+
 void test_parameter_confirmation_failure()
 {
   auto motor = make_fake_motor();
@@ -338,6 +379,7 @@ int main(int argc, char ** argv)
     test_feedback_timeout();
     test_command_limits_reject_without_clamping();
     test_velocity_and_effort_rejection();
+    test_transformed_position_boundaries();
     test_parameter_confirmation_failure();
     test_missing_stop_confirmation();
     test_concurrent_control_recovery_and_shutdown();
