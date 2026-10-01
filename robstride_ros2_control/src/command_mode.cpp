@@ -6,7 +6,7 @@ namespace robstride_ros2_control
 {
 namespace
 {
-bool set_interface(
+bool set_owned_interface(
   std::vector<CommandModeState> & states, const std::string & key, bool active)
 {
   for (auto & state : states) {
@@ -23,7 +23,16 @@ bool set_interface(
       return true;
     }
   }
-  return false;
+  // Humble broadcasts the complete switch list to every hardware component.
+  // Foreign joints are irrelevant, but unsupported interfaces on owned joints
+  // must still reject the switch. Match the full joint name, including namespaces.
+  for (const auto & state : states) {
+    const auto prefix = state.joint_name + "/";
+    if (key == state.joint_name || key.compare(0, prefix.size(), prefix) == 0) {
+      return false;
+    }
+  }
+  return true;
 }
 }  // namespace
 
@@ -35,13 +44,13 @@ bool validate_command_mode_switch(
 {
   auto resulting_states = current_states;
   for (const auto & key : stop_interfaces) {
-    if (!set_interface(resulting_states, key, false)) {
+    if (!set_owned_interface(resulting_states, key, false)) {
       if (error_message) {*error_message = "unknown command interface '" + key + "'";}
       return false;
     }
   }
   for (const auto & key : start_interfaces) {
-    if (!set_interface(resulting_states, key, true)) {
+    if (!set_owned_interface(resulting_states, key, true)) {
       if (error_message) {*error_message = "unknown command interface '" + key + "'";}
       return false;
     }
@@ -67,8 +76,8 @@ std::vector<CommandModeState> command_modes_after_switch(
   const std::vector<std::string> & stop_interfaces)
 {
   auto resulting_states = current_states;
-  for (const auto & key : stop_interfaces) {set_interface(resulting_states, key, false);}
-  for (const auto & key : start_interfaces) {set_interface(resulting_states, key, true);}
+  for (const auto & key : stop_interfaces) {set_owned_interface(resulting_states, key, false);}
+  for (const auto & key : start_interfaces) {set_owned_interface(resulting_states, key, true);}
   return resulting_states;
 }
 

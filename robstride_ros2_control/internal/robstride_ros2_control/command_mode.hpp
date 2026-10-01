@@ -15,8 +15,8 @@ struct CommandModeState
 };
 
 // Evaluates the state that would result after applying stop_interfaces followed by
-// start_interfaces. Returns false for unknown interface keys or if more than one
-// command interface would be active for any one joint.
+// start_interfaces. Ignores foreign joints; returns false for unsupported
+// interfaces on owned joints or multiple active command interfaces on one joint.
 bool validate_command_mode_switch(
   const std::vector<CommandModeState> & current_states,
   const std::vector<std::string> & start_interfaces,
