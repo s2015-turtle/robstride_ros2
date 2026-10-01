@@ -17,6 +17,8 @@ enum class CanTransportHealthState
   bridge_unavailable,
   transmit_stalled,
   worker_stopped,
+  executor_failed,
+  context_shutdown,
 };
 
 struct CanTransportHealth

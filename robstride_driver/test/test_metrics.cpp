@@ -37,6 +37,12 @@ TEST(MotorDiagnostics, NamesMotorModesAndTransportHealth)
   EXPECT_STREQ(
     rs::transport_health_name(rs::CanTransportHealthState::transmit_stalled),
     "transmit stalled");
+  EXPECT_STREQ(
+    rs::transport_health_name(rs::CanTransportHealthState::executor_failed),
+    "executor failed");
+  EXPECT_STREQ(
+    rs::transport_health_name(rs::CanTransportHealthState::context_shutdown),
+    "ROS context shutdown");
 }
 
 TEST(MotorDiagnostics, ReadsAConsistentSnapshotDuringConcurrentUpdates)
