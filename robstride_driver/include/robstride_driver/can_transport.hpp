@@ -32,6 +32,8 @@ struct CanTransportOptions
   std::string receive_topic{"from_can_bus"};
   size_t motor_count{0};
   size_t receive_qos_depth{32};
+  // Optional isolated ROS context; null uses the default context.
+  rclcpp::Context::SharedPtr context;
 };
 
 class CanTransport
@@ -63,6 +65,7 @@ public:
   CanTransport(const CanTransport &) = delete;
   CanTransport & operator=(const CanTransport &) = delete;
 
+  // Lifecycle calls are serialized by the owner and must not run in callbacks.
   void start();
   void stop();
   bool wait_for_endpoints(std::chrono::milliseconds timeout) const;
@@ -95,6 +98,9 @@ private:
   bool has_sendable_active_frame() const;
   void reset_metrics() noexcept;
   void publish_diagnostics();
+  void run_executor() noexcept;
+  void record_failure(bool executor_failure) noexcept;
+  void publish_failure_diagnostic() noexcept;
   void update_endpoint_status(bool available) const noexcept;
 
   CanTransportOptions options_;
@@ -113,6 +119,9 @@ private:
   std::thread worker_thread_;
   std::atomic<bool> running_{false};
   std::atomic<bool> worker_failed_{false};
+  std::atomic<bool> executor_failed_{false};
+  std::atomic<bool> context_shutdown_{false};
+  std::atomic<bool> executor_stop_requested_{false};
   std::atomic<bool> active_commands_enabled_{false};
   std::atomic<uint64_t> active_generation_{0};
   size_t transactions_in_flight_{0};

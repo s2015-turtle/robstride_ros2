@@ -79,6 +79,8 @@ const char * transport_health_name(CanTransportHealthState state) noexcept
     case CanTransportHealthState::bridge_unavailable: return "bridge unavailable";
     case CanTransportHealthState::transmit_stalled: return "transmit stalled";
     case CanTransportHealthState::worker_stopped: return "worker stopped";
+    case CanTransportHealthState::executor_failed: return "executor failed";
+    case CanTransportHealthState::context_shutdown: return "ROS context shutdown";
     default: return "unknown";
   }
 }

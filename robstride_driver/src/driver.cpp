@@ -180,6 +180,7 @@ void RobStrideDriver::stop() noexcept
 bool RobStrideDriver::update_state()
 {
   if (!active_) {return true;}
+  if (!check_transport_health()) {return false;}
   const auto now = std::chrono::steady_clock::now();
   bool read_failed = false;
   runtime_events_.clear();
@@ -346,6 +347,10 @@ bool RobStrideDriver::check_transport_health()
     condition = "CAN bridge transmit endpoint is unavailable";
   } else if (health.state == CanTransportHealthState::transmit_stalled) {
     condition = "CAN transmit worker is not making progress";
+  } else if (health.state == CanTransportHealthState::context_shutdown) {
+    condition = "CAN transport ROS context shut down";
+  } else if (health.state == CanTransportHealthState::executor_failed) {
+    condition = "CAN receive/diagnostic executor failed";
   } else if (health.state == CanTransportHealthState::worker_stopped) {
     condition = "CAN transmit worker stopped unexpectedly";
   }

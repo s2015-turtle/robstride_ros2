@@ -378,6 +378,25 @@ Diagnostic levels have the following meaning:
 | `WARN` | No feedback yet, Run-mode recovery is active, or an active motor is outside Run mode | Endpoint loss is still within its grace period, or hardware is inactive |
 | `ERROR` | Feedback is stale or a motor fault flag is set | A persistent transport failure affects active hardware |
 
+Exceptions from receive callbacks, diagnostic providers/publication, and executor
+work are contained at the transport thread boundary. A failure latches
+`executor failed` health, disables active commands, wakes transaction waiters,
+and makes active hardware reads and writes return `ERROR`. A one-shot transport
+`ERROR` diagnostic is attempted without invoking the metrics provider; if ROS
+publication is unavailable, health remains latched and stderr reports the failure.
+Expected ROS context shutdown reports `ROS context shutdown` health and stops
+transport service without reporting an executor exception (active hardware still
+returns `ERROR` because service is unavailable). Transmit-thread exceptions likewise stop service, including
+failures during worker setup before its first publication.
+
+Lifecycle start/stop must be called serially by the owning thread, never from a
+transport callback. Stop joins both threads before releasing ROS resources;
+restart reaps any failed run before creating new threads. The executor uses a
+finite idle wait rather than depending on cancellation during ROS shutdown.
+This does not bound a callback or publisher that blocks indefinitely: stop still
+waits for in-flight work, and no thread is detached. Transport failure cannot
+guarantee that motor stop commands reach the CAN bridge.
+
 The six fault flags in the normal motor feedback are decoded as undervoltage,
 overcurrent, over-temperature, encoder fault, stall overload, and encoder
 uncalibrated. The `fault_flags_raw` field remains available for firmware-level

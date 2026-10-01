@@ -1,6 +1,7 @@
 #include "robstride_driver/can_transport.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <iomanip>
 #include <sstream>
 #include <stdexcept>
@@ -45,39 +46,64 @@ CanTransport::~CanTransport() noexcept
 
 void CanTransport::start()
 {
-  if (running_) {return;}
+  if (running_ && !worker_failed_ && !executor_failed_ && !context_shutdown_) {return;}
+  // A failed run still owns joinable threads and ROS entities. Reap it before
+  // assigning new threads (std::thread assignment would otherwise terminate).
+  stop();
   reset_metrics();
   worker_failed_ = false;
+  executor_failed_ = false;
+  context_shutdown_ = false;
+  executor_stop_requested_ = false;
   bridge_available_ = false;
   bridge_unavailable_since_ns_ = 0;
   active_work_progress_ns_ = 0;
   update_endpoint_status(frame_sink_ && !endpoint_probe_);
 
-  if (!frame_sink_) {
-    node_ = std::make_shared<rclcpp::Node>(options_.node_name);
-    const auto qos =
-      rclcpp::QoS(rclcpp::KeepLast(std::max<size_t>(32, options_.motor_count * 4)))
-      .reliable().durability_volatile();
-    const auto receive_qos =
-      rclcpp::QoS(rclcpp::KeepLast(options_.receive_qos_depth))
-      .reliable().durability_volatile();
+  try {
+    if (!frame_sink_) {
+      rclcpp::NodeOptions node_options;
+      if (options_.context) {node_options.context(options_.context);}
+      node_ = std::make_shared<rclcpp::Node>(options_.node_name, node_options);
+      const auto qos =
+        rclcpp::QoS(rclcpp::KeepLast(std::max<size_t>(32, options_.motor_count * 4)))
+        .reliable().durability_volatile();
+      const auto receive_qos =
+        rclcpp::QoS(rclcpp::KeepLast(options_.receive_qos_depth))
+        .reliable().durability_volatile();
 
-    publisher_ = node_->create_publisher<can_msgs::msg::Frame>(options_.transmit_topic, qos);
-    receive_subscription_ = node_->create_subscription<can_msgs::msg::Frame>(
-      options_.receive_topic, receive_qos, receive_callback_);
-    if (metrics_provider_) {
+      publisher_ = node_->create_publisher<can_msgs::msg::Frame>(options_.transmit_topic, qos);
+      receive_subscription_ = node_->create_subscription<can_msgs::msg::Frame>(
+        options_.receive_topic, receive_qos,
+        [this](can_msgs::msg::Frame::ConstSharedPtr message) {
+          try {receive_callback_(std::move(message));} catch (...) {record_failure(true);}
+        });
       diagnostics_publisher_ =
         node_->create_publisher<diagnostic_msgs::msg::DiagnosticArray>("/diagnostics", 10);
-      diagnostics_timer_ = node_->create_wall_timer(
-        std::chrono::seconds(1), [this]() {publish_diagnostics();});
+      if (metrics_provider_) {
+        diagnostics_timer_ = node_->create_wall_timer(
+          std::chrono::seconds(1), [this]() {
+            try {publish_diagnostics();} catch (...) {record_failure(true);}
+          });
+      }
+      rclcpp::ExecutorOptions executor_options;
+      executor_options.context = node_->get_node_base_interface()->get_context();
+      executor_ =
+        std::make_shared<rclcpp::executors::SingleThreadedExecutor>(executor_options);
+      executor_->add_node(node_);
     }
-    executor_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
-    executor_->add_node(node_);
-  }
 
-  running_ = true;
-  if (executor_) {executor_thread_ = std::thread([this]() {executor_->spin();});}
-  worker_thread_ = std::thread([this]() {transmit_pending_frames();});
+    running_ = true;
+    if (executor_) {executor_thread_ = std::thread([this]() {run_executor();});}
+    worker_thread_ = std::thread([this]() noexcept {
+      // Includes allocation and wait/extraction, not just publisher calls.
+      try {transmit_pending_frames();} catch (...) {record_failure(false);}
+    });
+  } catch (...) {
+    record_failure(true);
+    stop();
+    throw;
+  }
 }
 
 void CanTransport::stop()
@@ -94,6 +120,7 @@ void CanTransport::stop()
     running_ = false;
   }
   pending_condition_.notify_all();
+  executor_stop_requested_ = true;
   disable_active_commands();
   if (worker_thread_.joinable()) {worker_thread_.join();}
 
@@ -105,7 +132,8 @@ void CanTransport::stop()
     for (auto & pending : pending_recovery_frames_) {pending.reset();}
   }
 
-  if (executor_) {executor_->cancel();}
+  // spin_once has a finite wait, so joining does not depend on cancel()
+  // successfully waking a ROS guard condition (which can throw on shutdown).
   if (executor_thread_.joinable()) {executor_thread_.join();}
 
   receive_subscription_.reset();
@@ -115,7 +143,12 @@ void CanTransport::stop()
     std::lock_guard<std::mutex> lock(publisher_mutex_);
     publisher_.reset();
   }
-  if (executor_ && node_) {executor_->remove_node(node_);}
+  if (executor_ && node_) {
+    try {executor_->remove_node(node_);} catch (...) {
+      // Both threads are joined. Destruction of the executor releases the
+      // association even when ROS teardown cannot notify its guard condition.
+    }
+  }
   executor_.reset();
   node_.reset();
 }
@@ -133,7 +166,7 @@ bool CanTransport::wait_for_endpoints(std::chrono::milliseconds timeout) const
     return available;
   }
   const auto deadline = std::chrono::steady_clock::now() + timeout;
-  while (std::chrono::steady_clock::now() < deadline) {
+  while (running_ && std::chrono::steady_clock::now() < deadline) {
     if (publisher_ && receive_subscription_ && publisher_->get_subscription_count() > 0 &&
       receive_subscription_->get_publisher_count() > 0)
     {
@@ -236,7 +269,9 @@ void CanTransport::apply_recovery_updates(const std::vector<RecoveryUpdate> & up
 void CanTransport::enable_active_commands()
 {
   disable_active_commands();
-  active_commands_enabled_ = true;
+  std::lock_guard<std::mutex> lock(pending_mutex_);
+  active_commands_enabled_ =
+    running_ && !worker_failed_ && !executor_failed_ && !context_shutdown_;
 }
 
 void CanTransport::disable_active_commands()
@@ -258,13 +293,15 @@ bool CanTransport::wait_for_transaction_acknowledgements(
   {
     std::unique_lock<std::mutex> lock(pending_mutex_);
     if (!pending_condition_.wait_until(lock, deadline, [this]() {
-        return pending_transactions_.empty() && transactions_in_flight_ == 0;
+        return worker_failed_ || executor_failed_ || context_shutdown_ ||
+               (pending_transactions_.empty() && transactions_in_flight_ == 0);
       }))
     {
       return false;
     }
   }
 
+  if (worker_failed_ || executor_failed_ || context_shutdown_) {return false;}
   if (frame_sink_) {return true;}
   const auto now = std::chrono::steady_clock::now();
   if (now >= deadline) {return false;}
@@ -277,13 +314,15 @@ bool CanTransport::wait_for_transaction_acknowledgements(
 void CanTransport::publish_transaction(const Frame & frame)
 {
   std::lock_guard<std::mutex> lock(publisher_mutex_);
+  if (worker_failed_ || executor_failed_ || context_shutdown_) {return;}
   if (publish_unlocked(frame)) {++transaction_frames_transmitted_;}
 }
 
 void CanTransport::publish_active(const ActiveFrame & frame, bool is_recovery)
 {
   std::lock_guard<std::mutex> lock(publisher_mutex_);
-  if (!active_commands_enabled_ || frame.generation != active_generation_) {return;}
+  if (!running_ || worker_failed_ || executor_failed_ || context_shutdown_ ||
+    !active_commands_enabled_ || frame.generation != active_generation_) {return;}
   const bool recovering = recovery_active_[frame.motor_index];
   if ((is_recovery && !recovering) || (!is_recovery && recovering)) {return;}
   if (!publish_unlocked(frame.frame)) {return;}
@@ -345,6 +384,14 @@ CanTransportHealth CanTransport::health(
         reference_ns > 0 ? std::max<int64_t>(0, now_ns - reference_ns) : 0);
     };
 
+  if (executor_failed_) {
+    return CanTransportHealth{
+      CanTransportHealthState::executor_failed, std::chrono::nanoseconds(0), true};
+  }
+  if (context_shutdown_) {
+    return CanTransportHealth{
+      CanTransportHealthState::context_shutdown, std::chrono::nanoseconds(0), true};
+  }
   if (worker_failed_ || !running_) {
     return CanTransportHealth{
       CanTransportHealthState::worker_stopped, std::chrono::nanoseconds(0), true};
@@ -384,6 +431,74 @@ void CanTransport::update_endpoint_status(bool available) const noexcept
   }
   int64_t unset = 0;
   (void)bridge_unavailable_since_ns_.compare_exchange_strong(unset, steady_now_ns());
+}
+
+void CanTransport::record_failure(bool executor_failure) noexcept
+{
+  if (executor_failure) {executor_failed_ = true;} else {worker_failed_ = true;}
+  // Match the worker's wait predicate and enable transition lock.
+  {
+    std::lock_guard<std::mutex> lock(pending_mutex_);
+    active_commands_enabled_ = false;
+    ++active_generation_;
+    running_ = false;
+  }
+  executor_stop_requested_ = true;
+  pending_condition_.notify_all();
+  // No provider call, ROS logging dependency, or exception may escape this path.
+  std::fputs(executor_failure ? "RobStride CAN executor failed\n" :
+    "RobStride CAN transmit worker failed\n", stderr);
+}
+
+void CanTransport::run_executor() noexcept
+{
+  try {
+    const auto context = node_->get_node_base_interface()->get_context();
+    while (!executor_stop_requested_ && rclcpp::ok(context)) {
+      executor_->spin_once(std::chrono::milliseconds(50));
+    }
+    if (!executor_stop_requested_) {
+      context_shutdown_ = true;
+      // Context shutdown is expected, not an executor fault. Still stop TX and
+      // reject active work so an active hardware interface observes lost service.
+      std::lock_guard<std::mutex> lock(pending_mutex_);
+      active_commands_enabled_ = false;
+      running_ = false;
+      pending_condition_.notify_all();
+    }
+  } catch (...) {
+    // ROS wait sets may throw during normal context shutdown. Callback wrappers
+    // above latch genuine user callback failures even if shutdown races them.
+    if (rclcpp::ok(node_->get_node_base_interface()->get_context())) {
+      record_failure(true);
+    } else {
+      context_shutdown_ = true;
+      std::lock_guard<std::mutex> lock(pending_mutex_);
+      active_commands_enabled_ = false;
+      running_ = false;
+      pending_condition_.notify_all();
+    }
+  }
+  if (executor_failed_ || worker_failed_) {publish_failure_diagnostic();}
+}
+
+void CanTransport::publish_failure_diagnostic() noexcept
+{
+  try {
+    if (!diagnostics_publisher_) {return;}
+    diagnostic_msgs::msg::DiagnosticArray message;
+    message.header.stamp = node_->now();
+    diagnostic_msgs::msg::DiagnosticStatus status;
+    status.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+    status.name = "robstride_driver/CAN traffic";
+    status.hardware_id = options_.transmit_topic + " -> " + options_.receive_topic;
+    status.message = executor_failed_ ? "executor failed" : "worker stopped";
+    message.status.push_back(std::move(status));
+    diagnostics_publisher_->publish(message);
+  } catch (...) {
+    // ROS or allocation itself may be unavailable. The latched health state and
+    // stderr report remain usable without the failed diagnostic provider.
+  }
 }
 
 void CanTransport::publish_diagnostics()
@@ -506,7 +621,8 @@ void CanTransport::transmit_pending_frames()
     pending_condition_.wait(lock, [this]() {
       return !running_ || !pending_transactions_.empty() || has_sendable_active_frame();
     });
-    if (!running_ && pending_transactions_.empty()) {break;}
+    if (worker_failed_ || executor_failed_ || context_shutdown_ ||
+      (!running_ && pending_transactions_.empty())) {break;}
 
     transactions.clear();
     recovery_frames.clear();
@@ -539,9 +655,7 @@ void CanTransport::transmit_pending_frames()
         active_work_progress_ns_ = steady_now_ns();
       }
     } catch (...) {
-      worker_failed_ = true;
-      running_ = false;
-      pending_condition_.notify_all();
+      record_failure(false);
       return;
     }
 
