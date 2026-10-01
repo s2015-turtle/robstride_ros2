@@ -1,5 +1,9 @@
 #include <gtest/gtest.h>
 
+#include <cmath>
+#include <iomanip>
+#include <limits>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 
@@ -116,4 +120,53 @@ TEST(CommandLimitConfig, DerivesOrderedEffortLimitsForNegativeDirection)
   const auto & limits = configuration.joints[0].command_limits;
   EXPECT_DOUBLE_EQ(limits.effort_min, -12.0);
   EXPECT_DOUBLE_EQ(limits.effort_max, 8.0);
+}
+
+TEST(CommandLimitConfig, AcceptsRoundedDefaultsAndRejectsAdjacentOutsidePositions)
+{
+  const auto number = [](double value) {
+      std::ostringstream output;
+      output << std::setprecision(std::numeric_limits<double>::max_digits10) << value;
+      return output.str();
+    };
+  for (const double direction : {1.0, -1.0}) {
+    for (const double offset : {1.0, -1.0}) {
+      auto hardware = hardware_info();
+      auto & parameters = hardware.joints[0].parameters;
+      parameters["position_min"] = "-12.566370614";
+      parameters["position_max"] = "12.566370614";
+      parameters["gear_ratio"] = "10";
+      parameters["direction"] = number(direction);
+      parameters["position_offset"] = number(offset);
+      const auto configuration = rs::parse_driver_configuration(hardware);
+      const auto & limits = configuration.joints[0].command_limits;
+      parameters["command_position_min"] = number(limits.position_min);
+      parameters["command_position_max"] = number(limits.position_max);
+      EXPECT_NO_THROW(rs::parse_driver_configuration(hardware));
+      parameters["command_position_min"] = number(std::nextafter(
+        limits.position_min, -std::numeric_limits<double>::infinity()));
+      EXPECT_THROW(rs::parse_driver_configuration(hardware), std::runtime_error);
+      parameters["command_position_min"] = number(limits.position_min);
+      parameters["command_position_max"] = number(std::nextafter(
+        limits.position_max, std::numeric_limits<double>::infinity()));
+      EXPECT_THROW(rs::parse_driver_configuration(hardware), std::runtime_error);
+    }
+  }
+}
+
+TEST(CommandLimitConfig, RejectsCollapsedPositionTransform)
+{
+  auto hardware = hardware_info();
+  hardware.joints[0].parameters["position_offset"] = "1e100";
+  EXPECT_THROW(rs::parse_driver_configuration(hardware), std::runtime_error);
+}
+
+TEST(CommandLimitConfig, RejectsNoncollapsedTransformWithLargeBoundaryError)
+{
+  auto hardware = hardware_info();
+  hardware.joints[0].parameters["position_offset"] = "1e16";
+  hardware.joints[0].parameters["gear_ratio"] = "10";
+  hardware.joints[0].parameters["position_min"] = "-12.566370614";
+  hardware.joints[0].parameters["position_max"] = "12.566370614";
+  EXPECT_THROW(rs::parse_driver_configuration(hardware), std::runtime_error);
 }

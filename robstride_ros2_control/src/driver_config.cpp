@@ -208,9 +208,11 @@ JointData parse_joint(const hardware_interface::ComponentInfo & info)
       throw std::runtime_error("invalid limits or gains");
     }
 
-    const auto default_position = ordered_range(
-      joint.direction * (joint.limits.position_min / joint.gear_ratio) + joint.position_offset,
-      joint.direction * (joint.limits.position_max / joint.gear_ratio) + joint.position_offset);
+    const auto position_range = joint.joint_position_range();
+    if (!position_range) {
+      throw std::runtime_error("position transform must produce a finite, ordered joint range");
+    }
+    const auto default_position = *position_range;
     const auto default_velocity = ordered_range(
       joint.direction * (joint.limits.velocity_min / joint.gear_ratio),
       joint.direction * (joint.limits.velocity_max / joint.gear_ratio));
@@ -239,18 +241,14 @@ JointData parse_joint(const hardware_interface::ComponentInfo & info)
       throw std::runtime_error("command limits must be finite and ordered");
     }
 
-    const auto motor_position = ordered_range(
-      joint.direction * (command.position_min - joint.position_offset) * joint.gear_ratio,
-      joint.direction * (command.position_max - joint.position_offset) * joint.gear_ratio);
     const auto motor_velocity = ordered_range(
       joint.direction * command.velocity_min * joint.gear_ratio,
       joint.direction * command.velocity_max * joint.gear_ratio);
     const auto motor_effort = ordered_range(
       joint.joint_to_motor_effort(command.effort_min),
       joint.joint_to_motor_effort(command.effort_max));
-    if (!contains_range(
-        joint.limits.position_min, joint.limits.position_max,
-        motor_position.first, motor_position.second) ||
+    if (!joint.checked_joint_to_motor_position(command.position_min) ||
+      !joint.checked_joint_to_motor_position(command.position_max) ||
       !contains_range(
         joint.limits.velocity_min, joint.limits.velocity_max,
         motor_velocity.first, motor_velocity.second) ||

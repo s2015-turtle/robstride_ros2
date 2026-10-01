@@ -87,7 +87,12 @@ void CanTransport::stop()
   // worker extract more work and makes shutdown scheduling-dependent.  The worker still
   // drains transactions that were queued before this point, but no longer extracts active
   // command frames once running_ is false.
-  running_ = false;
+  {
+    // Update the wait predicate under its mutex so the shutdown notification cannot
+    // arrive between the worker's predicate check and its entry into the wait.
+    std::lock_guard<std::mutex> lock(pending_mutex_);
+    running_ = false;
+  }
   pending_condition_.notify_all();
   disable_active_commands();
   if (worker_thread_.joinable()) {worker_thread_.join();}

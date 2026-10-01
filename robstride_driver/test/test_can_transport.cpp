@@ -466,3 +466,21 @@ TEST(CanTransport, StopsWhileBatchesAreBeingProduced)
   ASSERT_EQ(stop.wait_for(5s), std::future_status::ready);
   stop.get();
 }
+
+TEST(CanTransport, RepeatedlyStopsAsTheWorkerBecomesIdle)
+{
+  // Exercise shutdown around the transition from the last publication to the
+  // worker's condition-variable wait, without another producer to wake it later.
+  for (size_t iteration = 0; iteration < 200; ++iteration) {
+    SCOPED_TRACE(iteration);
+    auto capture = std::make_shared<CaptureState>();
+    rs::CanTransport transport(valid_options(), kReceiveCallback, sink_for(capture));
+    transport.start();
+    transport.send_transaction(rs::Frame{0x20, {}});
+    ASSERT_TRUE(capture->wait_for_size(1));
+
+    auto stop = std::async(std::launch::async, [&transport]() {transport.stop();});
+    ASSERT_EQ(stop.wait_for(5s), std::future_status::ready);
+    stop.get();
+  }
+}

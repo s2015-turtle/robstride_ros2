@@ -242,7 +242,12 @@ Position control activation requires recent, finite position feedback inside
 the mode switch; a rejected switch leaves the previous mode unchanged. The
 initial position target is the latest measured position, not a limit boundary.
 The feedback must be newer than `feedback_timeout_ms` even if
-`fail_on_feedback_timeout` is disabled.
+`fail_on_feedback_timeout` is disabled. Position transforms use the same strict
+joint-coordinate boundary checks during configuration, mode activation and
+command submission. A forward-transform boundary overshoot may be snapped to
+the motor endpoint only within eight adjacent `double` values; transforms that
+need a larger correction or collapse the joint range are rejected. This does
+not widen operational command limits or accept an adjacent outside joint value.
 Once active, a position, velocity, or effort command outside its `command_*`
 range (or the transformed motor range) is rejected, never clamped. The entire
 multi-joint CAN command batch is withheld, queued motion commands are cleared,
