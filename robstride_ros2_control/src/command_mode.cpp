@@ -26,9 +26,10 @@ bool set_owned_interface(
   // Humble broadcasts the complete switch list to every hardware component.
   // Foreign joints are irrelevant, but unsupported interfaces on owned joints
   // must still reject the switch. Match the full joint name, including namespaces.
+  const auto separator = key.rfind('/');
+  const auto joint_name = key.substr(0, separator);
   for (const auto & state : states) {
-    const auto prefix = state.joint_name + "/";
-    if (key == state.joint_name || key.compare(0, prefix.size(), prefix) == 0) {
+    if (joint_name == state.joint_name) {
       return false;
     }
   }

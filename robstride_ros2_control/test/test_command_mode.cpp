@@ -105,6 +105,8 @@ TEST(CommandMode, DistinguishesJointPrefixesAndNamespacedJoints)
   const std::vector<rs::CommandModeState> current{
     {"joint_1", false, false, false}, {"arm/joint", false, false, false}};
   EXPECT_TRUE(rs::validate_command_mode_switch(current, {"joint_10/position"}, {}));
+  EXPECT_TRUE(rs::validate_command_mode_switch(current, {"arm/joint/tool/position"}, {}));
+  EXPECT_TRUE(rs::validate_command_mode_switch(current, {}, {"arm/joint/tool/position"}));
   EXPECT_TRUE(rs::validate_command_mode_switch(current, {"arm/joint/effort"}, {}));
   EXPECT_FALSE(rs::validate_command_mode_switch(current, {"arm/joint/temperature"}, {}));
 }
