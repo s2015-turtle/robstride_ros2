@@ -73,6 +73,9 @@ if(BUILD_TESTING)
     target_link_libraries(test_vcan_transport_integration robstride_vcan_test_support)
     add_executable(test_vcan_fake_motor_integration test/test_vcan_fake_motor_integration.cpp)
     target_link_libraries(test_vcan_fake_motor_integration robstride_vcan_test_support)
+    # Test-only peer for the controller_manager integration runner; not installed.
+    add_executable(vcan_fake_motor_peer test/support/vcan_fake_motor_peer.cpp)
+    target_link_libraries(vcan_fake_motor_peer robstride_vcan_test_support)
   endif()
 endif()
 

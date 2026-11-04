@@ -2,6 +2,12 @@
 Changelog for package robstride_examples
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* Add opt-in controller_manager-to-vcan integration tests for command topics,
+  independent joint feedback, controller switching and hardware reactivation.
+* Run the complete installed-plugin scenario on Jazzy and Rolling in CI.
+
 0.2.0 (2026-09-06)
 ------------------
 * Forward the existing motor-profile Xacro include to robstride_ros2_control,

@@ -488,6 +488,12 @@ tests, a firmware-conformance claim, or evidence of physical safety. Real watchd
 timing, bus failures, motor dynamics, and safe mechanical behavior require hardware
 validation.
 
+Jazzy and Rolling CI also load the installed hardware plugin in a real
+controller_manager and exercise forward command controllers through vcan.
+These tests check position, velocity and effort commands at the fake motor,
+independent feedback on `/joint_states`, mode switching, and hardware
+deactivation/reactivation. See the [integration test instructions](robstride_examples/test/integration/README.md).
+
 ## License
 
 [MIT](LICENSE)

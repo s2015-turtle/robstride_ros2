@@ -119,9 +119,22 @@ jobs:
           colcon test-result --verbose
 
   vcan-integration:
-    name: vcan / ros2_socketcan
+    name: ${{ matrix.check_name }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    container:
+      image: ${{ matrix.container }}
+      options: --cap-add=NET_ADMIN --cap-add=SYS_MODULE --volume /lib/modules:/lib/modules:ro
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ros_distro: jazzy
+            container: ubuntu:noble
+            check_name: vcan / ros2_socketcan
+          - ros_distro: rolling
+            container: ubuntu:resolute
+            check_name: vcan / rolling
 
     steps:
       - name: Check out repository
@@ -138,17 +151,19 @@ jobs:
 
       - name: Bootstrap pinned ROS APT source
         shell: bash
-        run: bash .github/scripts/bootstrap-ros-apt.sh false
+        run: bash .github/scripts/bootstrap-ros-apt.sh "${{ matrix.ros_distro == 'rolling' }}"
 
       - name: Configure ROS 2 development tools
         uses: ros-tooling/setup-ros@v0.7
+        with:
+          use-ros2-testing: ${{ matrix.ros_distro == 'rolling' }}
 
       - name: Install dependencies
         shell: bash
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            ros-jazzy-ros-base \
+            ros-${{ matrix.ros_distro }}-ros-base \
             iproute2 \
             kmod
           # New runner kernels may already include vcan without a separate extras package.
@@ -160,7 +175,7 @@ jobs:
           rosdep install \
             --from-paths . \
             --ignore-src \
-            --rosdistro jazzy \
+            --rosdistro "${{ matrix.ros_distro }}" \
             -r -y
 
       - name: Create virtual CAN interface
@@ -171,19 +186,18 @@ jobs:
           sudo ip link set dev vcan0 up
           ip -details link show vcan0
 
-      - name: Build integration target
+      - name: Build integration targets and installed hardware plugin
         shell: bash
         run: |
-          source /opt/ros/jazzy/setup.bash
+          source /opt/ros/${{ matrix.ros_distro }}/setup.bash
           colcon build \
             --base-paths . \
-            --packages-select robstride_driver \
             --event-handlers console_cohesion+
 
       - name: Exercise transport and fake motor lifecycle
         shell: bash
         run: |
-          source /opt/ros/jazzy/setup.bash
+          source /opt/ros/${{ matrix.ros_distro }}/setup.bash
           source install/setup.bash
           setsid ros2 launch ros2_socketcan socket_can_bridge.launch.xml \
             interface:=vcan0 \
@@ -218,3 +232,24 @@ jobs:
             cat /tmp/robstride_socketcan.log
             exit 1
           }
+
+      - name: Exercise controller_manager through vcan
+        shell: bash
+        env:
+          ROS_DOMAIN_ID: '86'
+        run: |
+          source /opt/ros/${{ matrix.ros_distro }}/setup.bash
+          source install/setup.bash
+          python3 robstride_examples/test/integration/test_controller_manager_vcan.py \
+            --fake-motor build/robstride_driver/vcan_fake_motor_peer \
+            --output-dir /tmp/controller_manager_vcan
+
+      - name: Upload integration logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vcan-logs-${{ matrix.ros_distro }}
+          path: |
+            /tmp/controller_manager_vcan/
+            /tmp/robstride_socketcan.log
+          if-no-files-found: ignore
