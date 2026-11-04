@@ -6,6 +6,7 @@ from pathlib import Path
 import selectors
 import signal
 import subprocess
+import time
 
 
 class Processes:
@@ -38,34 +39,47 @@ class Processes:
         code = child.wait(timeout=timeout)
         if code != 0:
             raise RuntimeError(f"{name} failed: {code}")
+        self.stop_group(child)
         self.children.remove((name, child))
+
+    @staticmethod
+    def stop_group(child):
+        for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGKILL):
+            try:
+                os.killpg(child.pid, sig)
+            except ProcessLookupError:
+                break
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                child.poll()  # Reap the leader, but also wait for its descendants.
+                try:
+                    os.killpg(child.pid, 0)
+                except ProcessLookupError:
+                    break
+                time.sleep(0.05)
+            else:
+                continue
+            break
+        child.wait(timeout=3)
 
     def close(self):
         # Stop controller_manager before the bridge and fake motor, so lifecycle
         # stop frames still have a live transport during graceful shutdown.
-        for _, child in reversed(self.children):
-            for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGKILL):
-                try:
-                    os.killpg(child.pid, sig)
-                except ProcessLookupError:
-                    break
-                try:
-                    child.wait(timeout=3)
-                    # Also reap descendants of wrappers such as `ros2 run`.
-                    try:
-                        os.killpg(child.pid, signal.SIGTERM)
-                    except ProcessLookupError:
-                        pass
-                    break
-                except subprocess.TimeoutExpired:
-                    continue
-            child.wait(timeout=3)
-            if child.stdin:
-                child.stdin.close()
-            if child.stdout:
-                child.stdout.close()
+        errors = []
+        for name, child in reversed(self.children):
+            try:
+                self.stop_group(child)
+            except (OSError, subprocess.TimeoutExpired) as error:
+                errors.append(f"{name}: {error}")
+            finally:
+                if child.stdin:
+                    child.stdin.close()
+                if child.stdout:
+                    child.stdout.close()
         for log in self.logs:
             log.close()
+        if errors:
+            raise RuntimeError("Process cleanup failed: " + "; ".join(errors))
 
 
 class MotorPeer:

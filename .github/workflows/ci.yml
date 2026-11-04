@@ -119,7 +119,7 @@ jobs:
           colcon test-result --verbose
 
   vcan-integration:
-    name: vcan / ${{ matrix.ros_distro }}
+    name: ${{ matrix.check_name }}
     runs-on: ubuntu-24.04
     container:
       image: ${{ matrix.container }}
@@ -131,8 +131,10 @@ jobs:
         include:
           - ros_distro: jazzy
             container: ubuntu:noble
+            check_name: vcan / ros2_socketcan
           - ros_distro: rolling
             container: ubuntu:resolute
+            check_name: vcan / rolling
 
     steps:
       - name: Check out repository

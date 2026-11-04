@@ -134,7 +134,7 @@ class Scenario:
                   and abs(self.states["test_joint"][0] - expected) < 0.002,
                   f"Measured joint position did not reach {expected}")
 
-    def run(self, assets, output_dir):
+    def run(self, assets):
         robot = String(data=(assets / "robot.urdf").read_text())
 
         def initialized():
@@ -142,10 +142,13 @@ class Scenario:
             return self.clients["list_hardware_components"].service_is_ready()
 
         self.wait(initialized, "controller_manager did not initialize", timeout=30)
-        components = self.call("list_hardware_components", ListHardwareComponents.Request()).component
-        require(len(components) == 1 and components[0].name == "test_system"
-                and components[0].state.id == State.PRIMARY_STATE_ACTIVE,
-                "Hardware plugin did not activate")
+        def hardware_active():
+            components = self.call(
+                "list_hardware_components", ListHardwareComponents.Request()).component
+            return (len(components) == 1 and components[0].name == "test_system"
+                    and components[0].state.id == State.PRIMARY_STATE_ACTIVE)
+
+        self.wait(hardware_active, "Hardware plugin did not activate")
         snapshot = self.peer.request()
         require(snapshot["mode"] == 2 and snapshot["watchdog"] == 20000
                 and snapshot["run_mode"] == 0, "Motor startup parameters were not applied")
@@ -228,7 +231,7 @@ def main():
             "--params-file", str(assets / "controllers.yaml"),
             "-r", "~/robot_description:=/robot_description",
         ])
-        scenario.run(assets, args.output_dir)
+        scenario.run(assets)
     finally:
         processes.close()
         if peer:

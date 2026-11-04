@@ -8,6 +8,16 @@
 
 namespace rs = robstride_driver;
 
+namespace
+{
+std::string parameter_json(const rs::test::FakeRobStrideMotor & motor, uint16_t index)
+{
+  // Before controller_manager starts, no parameter write has reached the peer.
+  try {return std::to_string(motor.parameter(index));}
+  catch (const std::runtime_error &) {return "null";}
+}
+}  // namespace
+
 // A line-based test control channel keeps observations independent of DDS.
 // All motor commands are received from vcan, never from this stdin channel.
 int main()
@@ -37,8 +47,8 @@ int main()
                 << ",\"enables\":" << motor.enable_count()
                 << ",\"motions\":" << motor.motion_count()
                 << ",\"stops\":" << motor.stop_count()
-                << ",\"watchdog\":" << motor.parameter(rs::kIndexCanTimeout)
-                << ",\"run_mode\":" << motor.parameter(rs::kIndexRunMode)
+                << ",\"watchdog\":" << parameter_json(motor, rs::kIndexCanTimeout)
+                << ",\"run_mode\":" << parameter_json(motor, rs::kIndexRunMode)
                 << ",\"id\":" << (frame ? frame->id : 0) << ",\"data\":[";
       if (frame) {
         for (size_t index = 0; index < frame->data.size(); ++index) {
