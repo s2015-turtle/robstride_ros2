@@ -217,3 +217,20 @@ TEST(ManagedInterfaces, AdapterReportsUnavailableCommandStorage)
   }
   EXPECT_EQ(system.write(rclcpp::Time(0), rclcpp::Duration(0, 0)), hi::return_type::OK);
 }
+
+TEST(ManagedInterfaces, FailedModeInitializationCannotConsumeStaleTargets)
+{
+  rs::RobStrideSystem system;
+  ASSERT_EQ(system.on_init(parameters()), hi::CallbackReturn::SUCCESS);
+  system.on_export_state_interfaces();
+  system.on_export_command_interfaces();
+  system.set_command("joint_1/velocity", 20.0);
+  {
+    LockedHandle locked(system.get_command_interface_handle("joint_1/velocity")->get_mutex());
+    EXPECT_EQ(system.perform_command_mode_switch({"joint_1/velocity"}, {}), hi::return_type::ERROR);
+  }
+  // Releasing the handle alone must not make the old nonzero value executable.
+  EXPECT_EQ(system.read(rclcpp::Time(0), rclcpp::Duration(0, 0)), hi::return_type::ERROR);
+  EXPECT_EQ(system.write(rclcpp::Time(0), rclcpp::Duration(0, 0)), hi::return_type::ERROR);
+  EXPECT_EQ(system.perform_command_mode_switch({}, {}), hi::return_type::ERROR);
+}

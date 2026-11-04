@@ -42,6 +42,7 @@ struct RobStrideSystem::Impl
 #ifdef ROBSTRIDE_ROS2_USE_MANAGED_INTERFACES
   InterfaceValueBindings<hardware_interface::StateInterface> states;
   InterfaceValueBindings<hardware_interface::CommandInterface> commands;
+  bool command_sync_failed{false};
 #endif
 };
 
@@ -185,6 +186,7 @@ hardware_interface::CallbackReturn RobStrideSystem::on_activate(const rclcpp_lif
     impl_->driver.stop();
     return hardware_interface::CallbackReturn::ERROR;
   }
+  impl_->command_sync_failed = false;
 #endif
   return hardware_interface::CallbackReturn::SUCCESS;
 }
@@ -212,6 +214,9 @@ hardware_interface::CallbackReturn RobStrideSystem::on_error(const rclcpp_lifecy
 hardware_interface::return_type RobStrideSystem::read(
   const rclcpp::Time &, const rclcpp::Duration &)
 {
+#ifdef ROBSTRIDE_ROS2_USE_MANAGED_INTERFACES
+  if (impl_->command_sync_failed) {return hardware_interface::return_type::ERROR;}
+#endif
   if (!impl_->driver.update_state()) {return hardware_interface::return_type::ERROR;}
 #ifdef ROBSTRIDE_ROS2_USE_MANAGED_INTERFACES
   if (!impl_->states.publish()) {return hardware_interface::return_type::ERROR;}
@@ -223,6 +228,7 @@ hardware_interface::return_type RobStrideSystem::write(
   const rclcpp::Time &, const rclcpp::Duration &)
 {
 #ifdef ROBSTRIDE_ROS2_USE_MANAGED_INTERFACES
+  if (impl_->command_sync_failed) {return hardware_interface::return_type::ERROR;}
   if (!impl_->commands.consume()) {return hardware_interface::return_type::ERROR;}
 #endif
   return impl_->driver.send_commands() ?
@@ -262,6 +268,9 @@ hardware_interface::return_type RobStrideSystem::prepare_command_mode_switch(
 hardware_interface::return_type RobStrideSystem::perform_command_mode_switch(
   const std::vector<std::string> & start, const std::vector<std::string> & stop)
 {
+#ifdef ROBSTRIDE_ROS2_USE_MANAGED_INTERFACES
+  if (impl_->command_sync_failed) {return hardware_interface::return_type::ERROR;}
+#endif
   const auto previous_states = current_command_modes(impl_->driver);
   const auto resulting_states = command_modes_after_switch(previous_states, start, stop);
   std::vector<robstride_driver::ClaimedInterfaces> modes;
@@ -295,6 +304,13 @@ hardware_interface::return_type RobStrideSystem::perform_command_mode_switch(
     }
   }
   if (!impl_->commands.publish_selected(initialized_commands)) {
+    // perform_command_mode_switch() errors do not necessarily invoke on_error().
+    // Prevent the next write from replacing initialized targets with stale values;
+    // the next read/write ERROR delegates stopping to the hardware lifecycle.
+    impl_->command_sync_failed = true;
+    RCLCPP_ERROR(
+      rclcpp::get_logger("RobStrideSystem"),
+      "Failed to synchronize initial command values; hardware reactivation is required");
     return hardware_interface::return_type::ERROR;
   }
 #endif
