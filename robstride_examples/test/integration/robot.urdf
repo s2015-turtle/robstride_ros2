@@ -1,0 +1,44 @@
+<?xml version="1.0"?>
+<robot name="vcan_integration">
+  <link name="base_link"/>
+  <link name="motor_link"/>
+  <joint name="test_joint" type="continuous">
+    <parent link="base_link"/>
+    <child link="motor_link"/>
+    <axis xyz="0 0 1"/>
+  </joint>
+  <ros2_control name="test_system" type="system">
+    <hardware>
+      <plugin>robstride_ros2/RobStrideSystem</plugin>
+      <param name="can_tx_topic">/integration/to_bus</param>
+      <param name="can_rx_topic">/integration/from_bus</param>
+      <param name="startup_connection_timeout_ms">10000</param>
+      <param name="startup_confirmation_timeout_ms">1000</param>
+      <param name="feedback_timeout_ms">2000</param>
+      <param name="clear_faults_on_activate">false</param>
+      <param name="set_zero_on_activate">false</param>
+    </hardware>
+    <joint name="test_joint">
+      <param name="model">EL05</param>
+      <param name="can_id">1</param>
+      <param name="can_timeout_ticks">20000</param>
+      <param name="kp">20.0</param>
+      <param name="kd">0.5</param>
+      <param name="direction">-1</param>
+      <param name="gear_ratio">2.0</param>
+      <param name="position_offset">0.1</param>
+      <param name="command_position_min">-1</param>
+      <param name="command_position_max">1</param>
+      <param name="command_velocity_min">-2</param>
+      <param name="command_velocity_max">2</param>
+      <param name="command_effort_min">-2</param>
+      <param name="command_effort_max">2</param>
+      <command_interface name="position"/>
+      <command_interface name="velocity"/>
+      <command_interface name="effort"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+      <state_interface name="effort"/>
+    </joint>
+  </ros2_control>
+</robot>
