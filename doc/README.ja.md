@@ -128,8 +128,8 @@ ros2 topic pub --rate 20 \
 | `feedback_timeout_ms` | `3000` | feedbackを受信できない状態でERRORを返すまでの時間 |
 | `fail_on_feedback_timeout` | `true` | feedback timeout時にHardwareを停止 |
 | `transmit_failure_timeout_ms` | `1000` | 送信endpointの消失またはsender停滞をERRORにするまでの猶予時間 |
-| `run_mode_recovery_timeout_ms` | `500` | active中のモーターがRunへ復帰するまで待つ時間 |
-| `run_mode_recovery_retry_interval_ms` | `100` | 自動有効化を再試行する最小間隔 |
+| `run_mode_recovery_timeout_ms` | `500` | 非推奨。設定互換性のため受け付けますが動作には影響しません |
+| `run_mode_recovery_retry_interval_ms` | `100` | 非推奨。設定互換性のため受け付けますが動作には影響しません |
 | `clear_faults_on_activate` | `true` | activate時にモーターのfaultをclear |
 | `set_zero_on_activate` | `false` | activate時の現在位置を機械ゼロに設定 |
 | `shutdown_stop_repetitions` | `3` | 終了時にゼロ指令と停止指令を送る回数 |
@@ -139,7 +139,9 @@ ros2 topic pub --rate 20 \
 | `startup_confirmation_timeout_ms` | `500` | parameterと有効化確認の1試行あたりのtimeout |
 | `startup_retries` | `3` | 起動時のparameter設定と有効化の最大試行回数 |
 
-Hardwareがactiveの間は、各モーターの動作状態を監視します。モーターが意図せずRun以外へ移行するとWARNを出力し、自動的に再度有効化します。Runへの復帰を確認すると指令送信を再開します。`run_mode_recovery_timeout_ms`以内に復帰しない場合はHardwareがERRORを返し、すべてのモーターを停止します。
+Hardwareがactive中にRun以外の状態（Reset・校正中・未知の状態）または故障フラグを受信すると、エラー状態を保持します。外部停止・電源再投入・watchdog・保護停止を区別できないため、自動再有効化は行わず、有効にする設定もありません。制御ループが検出した時点で保留中の運転指令を破棄し、read/writeからERRORを返して全軸停止処理へ移ります。既にDDS/CANへ渡したフレームは取り消せません。正常なフィードバックへ戻っても解除せず、原因を解消してhardware/controllerを明示的に再設定・再有効化してください。再有効化時はパラメータ設定とset_zero_on_activateの設定を適用し、位置目標を実測位置、速度・トルクをゼロへ初期化します。
+
+通信断はfail_on_feedback_timeoutに従います。有効ならタイムアウト後も指令送信を抑止し、明示的な再有効化を必要とします。無効なら無応答のみでは停止しませんが、非Run状態や故障の受信では停止します。Resetや故障を観測できない短い電源断は識別できません。互換性のため残したrecoveryカウンタはゼロのままです。
 
 active中は送信経路も監視します。CAN bridgeの送信topic endpointが一時的に消失した
 場合は、間引いたWARNを出して復帰を待ちます。endpointの消失または送信workerの停滞が

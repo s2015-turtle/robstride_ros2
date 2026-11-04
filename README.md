@@ -157,8 +157,8 @@ description.
 | `feedback_timeout_ms` | `3000` | Maximum time without motor feedback before returning ERROR |
 | `fail_on_feedback_timeout` | `true` | Stop the hardware when feedback times out |
 | `transmit_failure_timeout_ms` | `1000` | Grace period before a missing transmit endpoint or stalled sender returns ERROR |
-| `run_mode_recovery_timeout_ms` | `500` | Time allowed for an active motor to recover to Run mode before returning ERROR |
-| `run_mode_recovery_retry_interval_ms` | `100` | Minimum interval between automatic enable retries |
+| `run_mode_recovery_timeout_ms` | `500` | Deprecated; accepted for configuration compatibility, has no effect |
+| `run_mode_recovery_retry_interval_ms` | `100` | Deprecated; accepted for configuration compatibility, has no effect |
 | `clear_faults_on_activate` | `true` | Clear motor faults during activation |
 | `set_zero_on_activate` | `false` | Set the current motor position as mechanical zero |
 | `shutdown_stop_repetitions` | `3` | Number of zero and stop commands sent at shutdown |
@@ -168,11 +168,22 @@ description.
 | `startup_confirmation_timeout_ms` | `500` | Per-attempt parameter and enable confirmation timeout |
 | `startup_retries` | `3` | Number of startup parameter and enable attempts |
 
-While active, the hardware monitors each motor's operating state. If a motor
-unexpectedly leaves Run mode, the component logs a warning and attempts to
-enable it again. Commands resume after Run mode is confirmed. If recovery does
-not complete within `run_mode_recovery_timeout_ms`, the hardware reports an
-error and stops all motors.
+While active, any non-Run feedback (Reset, calibration, or an unknown mode) or
+nonzero motor fault latches a hardware error. There is no automatic re-enable
+option: the feedback cannot distinguish an external stop, power cycle, watchdog
+expiry, or protective stop. Pending motion is discarded when the control loop
+observes the latch, and read/write return ERROR so ros2_control stops the whole
+component. Frames already handed to DDS/CAN cannot be recalled.
+Later healthy feedback does not clear the latch. Resolve the cause and explicitly
+reconfigure/reactivate the hardware and controllers. Startup reapplies motor
+parameters, follows `set_zero_on_activate`, and initializes command values to
+measured position and zero velocity/effort.
+
+Feedback loss follows `fail_on_feedback_timeout`: when enabled, expiry also
+latches command inhibition until explicit reactivation. When disabled, silent
+loss alone does not stop commands; receiving a non-Run state or fault still does.
+A brief outage with no observed Reset/fault cannot be identified as a power cycle.
+Recovery counters remain available for compatibility and stay zero.
 
 The transmit path is also monitored while the hardware is active. A temporary
 loss of the CAN bridge's transmit topic endpoint produces a throttled warning.
@@ -469,7 +480,7 @@ its loss independently of transmit-path monitoring.
 CI additionally exercises both directions of the topic transport through
 `ros2_socketcan` and a Linux `vcan` interface. A simulated RobStride motor on
 that bus verifies startup parameter confirmation, enable and motion feedback,
-automatic Run-mode recovery, feedback timeout handling, and shutdown when stop
+latched rejection of non-Run/fault feedback, feedback timeout handling, and shutdown when stop
 confirmation is missing. The fake keeps explicitly injected measured position
 separate from captured commands: it does not model motion or teleport the shaft
 when a zero-gain startup command arrives. Tests include startup outside operational
@@ -481,7 +492,9 @@ The fake simulates the configured CAN watchdog using a monotonic clock and
 motion commands refresh it. Parameter reads and traffic addressed to other motor
 IDs do not. Expiry changes the fake to Reset and emits feedback if enabled.
 Two-motor scenarios independently drop one motor's commands or feedback, verify
-per-ID recovery routing, and check both settings of `fail_on_feedback_timeout`.
+per-ID fault routing and whole-component stopping, and check both settings of
+`fail_on_feedback_timeout`. Fault, calibration, unknown mode, external Reset and
+restored healthy feedback tests verify that no automatic Enable is sent.
 Polling has bounded deadlines; driver and worker-thread cleanup is RAII-managed,
 including failed assertions. These software simulations are not hardware-in-the-loop
 tests, a firmware-conformance claim, or evidence of physical safety. Real watchdog

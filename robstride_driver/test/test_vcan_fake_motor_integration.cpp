@@ -161,20 +161,13 @@ void test_complete_lifecycle_and_recovery()
 
   const uint64_t enables_before = motor.enable_count();
   motor.report_reset();
-  require(wait_until([&]() {
-    driver.update_state();
-    return motor.enable_count() > enables_before;
-  }), "unexpected Reset mode did not trigger an enable retry");
-  require(wait_until([&]() {
-    return driver.update_state() && motor.mode() == rs::kMotorModeRun &&
-           driver.metrics().motors[0].mode == rs::kMotorModeRun;
-  }), "motor did not recover to Run mode");
-  const auto recovered_metrics = driver.metrics();
-  require(recovered_metrics.motors[0].recovery_attempts > 0,
-    "diagnostics did not retain the recovery attempt count");
-  require(!recovered_metrics.motors[0].recovery_active,
-    "diagnostics still reported recovery after Run mode returned");
-
+  require(wait_until([&]() {return !driver.update_state();}),
+    "Reset did not reject active hardware");
+  for (int i = 0; i < 5; ++i) {
+    require(!driver.send_commands(), "stopped hardware resumed commands");
+    require(!driver.update_state(), "stopped hardware resumed reads");
+  }
+  require(motor.enable_count() == enables_before, "external stop triggered automatic enable");
   driver.stop();
   require(wait_until([&]() {return motor.mode() == rs::kMotorModeReset;}),
     "motor did not confirm Reset during deactivation");
@@ -219,6 +212,40 @@ void test_neutral_commands_after_mode_activation()
   }
   driver.stop();
   driver.close();
+}
+
+void test_fault_and_non_run_latch()
+{
+  for (const auto status : {std::pair<uint8_t, uint8_t>{1, 0}, {2, 1}, {3, 0}}) {
+    auto motor = make_fake_motor();
+    rs::RobStrideDriver driver(rclcpp::get_logger("vcan_stop_policy"));
+    require(driver.initialize(configuration("vcan_stop_policy")), "initialization failed");
+    open_and_start(driver);
+    require(driver.apply_command_modes({rs::ClaimedInterfaces{false, true, false}}),
+      "velocity activation failed");
+    driver.joints()[0].command.velocity = 2.0;
+    const auto enables = motor.enable_count();
+    motor.report_status(status.first, status.second);
+    require(wait_until([&]() {return !driver.update_state();}),
+      "fault or non-Run mode did not latch an error");
+    motor.report_status(rs::kMotorModeRun, 0);
+    require(wait_until([&]() {return driver.metrics().motors[0].mode == rs::kMotorModeRun;}),
+      "restored feedback was not received");
+    const auto motion = motor.motion_count();
+    for (int i = 0; i < 5; ++i) {
+      require(!driver.send_commands() && !driver.update_state(),
+        "healthy feedback cleared the stop latch");
+    }
+    require(motor.motion_count() == motion && motor.enable_count() == enables,
+      "queued commands or enable retries escaped the stop latch");
+    driver.stop();
+    require(driver.start(), "explicit hardware restart failed");
+    require(driver.joints()[0].command.velocity == 0.0,
+      "explicit restart retained a pre-stop velocity command");
+    require(driver.send_commands(), "commands remained inhibited after explicit restart");
+    driver.stop();
+    driver.close();
+  }
 }
 
 void test_feedback_timeout()
@@ -502,48 +529,37 @@ void test_two_motor_fault_isolation(bool fail_on_timeout)
   require(driver.update_state() == !fail_on_timeout,
     "whole-component read result ignored configured feedback timeout policy");
   first.set_feedback_enabled(true);
-  require(wait_until([&]() {
-    cycle();
-    return !driver.metrics().motors[0].feedback_stale && driver.update_state();
-  }), "reads did not recover after feedback resumed");
+  if (fail_on_timeout) {
+    require(!driver.send_commands(), "timeout did not latch command inhibition");
+    driver.stop();
+    require(driver.start(), "explicit restart after feedback loss failed");
+  } else {
+    require(wait_until([&]() {
+      cycle();
+      return !driver.metrics().motors[0].feedback_stale && driver.update_state();
+    }), "feedback did not resume under the disabled-timeout policy");
+  }
 
   const auto first_enables = first.enable_count();
   const auto second_enables = second.enable_count();
-  first.report_reset();
-  require(wait_until([&]() {
-    cycle();
-    require(driver.update_state(), "single-motor Reset failed before recovery deadline");
-    const auto metrics = driver.metrics();
-    return first.enable_count() > first_enables &&
-           metrics.motors[0].mode == rs::kMotorModeRun && !metrics.motors[0].recovery_active;
-  }), "single-motor Reset was not recovered");
-  require(second.enable_count() == second_enables &&
-    driver.metrics().motors[1].recovery_attempts == 0,
-    "recovery enable was routed to the healthy motor");
-
-  // Lose commands to just ID 1. ID 7 keeps receiving host traffic on the same bus.
   const auto first_resets = first.watchdog_reset_count();
   const auto second_resets = second.watchdog_reset_count();
-  const auto second_motion = second.motion_count();
   first.set_commands_enabled(false);
   require(wait_until([&]() {
-    cycle();
+    driver.send_commands();
     return first.watchdog_reset_count() > first_resets;
   }), "configured watchdog did not reset the motor after command loss");
-  require(first.mode() == rs::kMotorModeReset && second.mode() == rs::kMotorModeRun &&
-    second.watchdog_reset_count() == second_resets && second.motion_count() > second_motion,
-    "unrelated motor traffic refreshed the lost motor watchdog or reset the healthy motor");
+  require(second.watchdog_reset_count() == second_resets,
+    "one motor's command loss reset the healthy motor");
+  require(wait_until([&]() {return !driver.update_state();}),
+    "watchdog Reset did not fail the whole component");
   first.set_commands_enabled(true);
-  require(wait_until([&]() {
-    cycle();
-    // A stale read may precede delivery of the watchdog Reset feedback.
-    driver.update_state();
-    return driver.metrics().motors[0].mode == rs::kMotorModeRun &&
-           !driver.metrics().motors[0].recovery_active &&
-           first.mode() == rs::kMotorModeRun;
-  }), "watchdog-reset motor did not recover after commands resumed");
-  require(second.enable_count() == second_enables,
-    "watchdog recovery enabled the wrong motor");
+  require(!driver.send_commands(), "communication restoration resumed stale commands");
+  require(first.enable_count() == first_enables && second.enable_count() == second_enables,
+    "communication restoration automatically enabled a motor");
+  driver.stop();
+  require(wait_until([&]() {return second.mode() == rs::kMotorModeReset;}),
+    "whole-component stop did not stop the other motor");
   first.check_worker();
   second.check_worker();
 }
@@ -563,11 +579,12 @@ void test_concurrent_control_recovery_and_shutdown()
 
   const uint64_t enables_before = motor.enable_count();
   motor.report_reset();
-  const bool recovery_observed =
-    wait_until([&]() {return motor.enable_count() > enables_before;});
+  const bool stop_observed =
+    wait_until([&]() {return driver.metrics().motors[0].mode == rs::kMotorModeReset;});
   driver.stop();
   control_cycle.stop();
-  require(recovery_observed, "concurrent feedback did not trigger recovery");
+  require(stop_observed, "concurrent feedback did not report Reset");
+  require(motor.enable_count() == enables_before, "concurrent Reset triggered automatic enable");
   require(wait_until([&]() {return motor.mode() == rs::kMotorModeReset;}),
     "concurrent shutdown did not stop the motor");
   driver.close();
@@ -584,6 +601,7 @@ int main(int argc, char ** argv)
     test_two_motor_fault_isolation(false);
     test_complete_lifecycle_and_recovery();
     test_neutral_commands_after_mode_activation();
+    test_fault_and_non_run_latch();
     test_feedback_timeout();
     test_command_limits_reject_without_clamping();
     test_velocity_and_effort_rejection();
