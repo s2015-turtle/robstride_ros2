@@ -150,8 +150,12 @@ jobs:
           sudo apt-get install -y \
             ros-jazzy-ros-base \
             iproute2 \
-            kmod \
-            "linux-modules-extra-$(uname -r)"
+            kmod
+          # New runner kernels may already include vcan without a separate extras package.
+          if ! sudo modprobe vcan; then
+            sudo apt-get install -y "linux-modules-extra-$(uname -r)"
+            sudo modprobe vcan
+          fi
           rosdep update
           rosdep install \
             --from-paths . \
