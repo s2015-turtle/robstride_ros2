@@ -2,6 +2,15 @@
 Changelog for package robstride_ros2
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+0.3.0 (2026-11-04)
+------------------
+* Synchronize all four packages at 0.3.0 for strict operational command rejection,
+  activation checks, transport robustness and current Rolling compatibility.
+* Preserve the aggregate installation entry point and plugin identifier
+  ``robstride_ros2/RobStrideSystem``.
+* Include controller_manager-to-vcan integration coverage on Jazzy and Rolling.
+* Contributors: Yamato.K
+
 0.2.0 (2026-09-06)
 ------------------
 * Synchronize all packages at 0.2.0 for diagnostics, transport health,

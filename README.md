@@ -24,6 +24,18 @@ repository. A Japanese README is available as
 - A nonzero motor-side CAN watchdog configured on every activation
 - CAN traffic, command-coalescing, and per-motor feedback diagnostics
 
+## Upgrading from 0.2.x to 0.3.0
+
+Out-of-range commands now fail the complete multi-joint command batch instead
+of being clamped. Correct the command and reactivate the hardware/controller;
+position activation also requires fresh feedback within the operational limits.
+
+The example now enables `set_zero_on_activate`, redefining mechanical zero at
+each hardware activation. The driver's default remains `false`. Review this
+setting before using the example on a robot with an existing calibrated reference.
+The plugin identifier and automatic Run-mode recovery policy are unchanged.
+See the [changelog](CHANGELOG.rst) for the full changes and remaining limitations.
+
 ## Package structure
 
 The repository contains four ROS 2 packages:
@@ -199,7 +211,7 @@ Each `<joint>` requires its own motor settings.
 | `model` | custom | Known model name or `custom` (explicit numeric limits) |
 | `position_min/max` | required for custom | CAN encoding range in radians |
 | `velocity_min/max` | required for custom | CAN encoding range in rad/s |
-| `effort_min/max` | required for custom | Motor-side effort clamp in Nm |
+| `effort_min/max` | required for custom | Motor-side effort command limits in Nm |
 | `effort_wire_min/max` | effort limits | Motor-side CAN encoding range in Nm |
 | `kp_max` / `kd_max` | required for custom | Gain encoding limits |
 | `kp` / `kd` | required | Gains used for position and velocity command interfaces |
@@ -234,7 +246,7 @@ ROS joint coordinates. Configuration fails if a limit is non-finite, reversed,
 or falls outside the corresponding CAN range after applying `direction`,
 `gear_ratio`, and `position_offset`.
 Velocity and effort ranges (both operational limits and CAN ranges) must include
-zero so activation and neutral commands cannot be clamped to a nonzero target.
+zero so neutral commands remain within the configured limits.
 Zero may be either boundary. Position ranges do not have this requirement.
 
 Position control activation requires recent, finite position feedback inside

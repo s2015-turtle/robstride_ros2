@@ -25,7 +25,7 @@ Every joint exports position, velocity, and effort command interfaces and the
 corresponding state interfaces. Temperature and fault state interfaces are
 optional. The component also handles lifecycle activation, startup readback,
 feedback timeouts, motor watchdog configuration, Run-mode recovery, command
-clamping, transmit-path failure propagation, and repeated stop commands during
+validation and rejection, transmit-path failure propagation, and repeated stop commands during
 shutdown.
 
 CAN traffic is exchanged through configurable `can_msgs/msg/Frame` topics, so
