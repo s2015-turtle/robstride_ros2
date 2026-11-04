@@ -90,8 +90,8 @@ private:
   std::condition_variable feedback_condition_;
   std::vector<RuntimeEvent> runtime_events_;
   std::vector<CanTransport::MotorFrame> command_snapshot_;
-  std::vector<CanTransport::RecoveryUpdate> recovery_updates_;
   std::atomic<bool> active_{false};
+  std::atomic<bool> motor_stop_latched_{false};
   std::atomic<bool> command_rejected_{false};
   std::chrono::steady_clock::time_point activated_at_{};
   std::shared_ptr<rclcpp::Clock> log_clock_;

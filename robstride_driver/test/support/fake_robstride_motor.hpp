@@ -33,6 +33,7 @@ public:
   void set_stop_confirmation_enabled(bool enabled);
   void set_response_delay(std::chrono::milliseconds delay);
   void report_reset();
+  void report_status(uint8_t mode, uint8_t fault_flags);
   void report_position(double motor_position, const Limits & limits);
 
   uint8_t mode() const;

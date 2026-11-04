@@ -151,7 +151,8 @@ struct FakeRobStrideMotor::Impl
     put_be16(data, 4, effort_raw.load());
     put_be16(data, 6, 300);
     const uint16_t area =
-      (static_cast<uint16_t>(mode.load() & 0x03) << 14) | options.motor_id;
+      (static_cast<uint16_t>(mode.load() & 0x03) << 14) |
+      (static_cast<uint16_t>(fault_flags.load() & 0x3f) << 8) | options.motor_id;
     const uint32_t id =
       (static_cast<uint32_t>(kTypeFeedback) << 24) |
       (static_cast<uint32_t>(area) << 8) | options.host_id;
@@ -176,6 +177,7 @@ struct FakeRobStrideMotor::Impl
   std::atomic<bool> stop_confirmation_enabled{true};
   std::atomic<int64_t> response_delay_ms{0};
   std::atomic<uint8_t> mode{kMotorModeReset};
+  std::atomic<uint8_t> fault_flags{0};
   std::atomic<uint16_t> position_raw{32768};
   std::atomic<uint16_t> velocity_raw{32768};
   std::atomic<uint16_t> effort_raw{32768};
@@ -224,6 +226,13 @@ void FakeRobStrideMotor::set_response_delay(std::chrono::milliseconds delay)
 void FakeRobStrideMotor::report_reset()
 {
   impl_->mode = kMotorModeReset;
+  impl_->send_feedback();
+}
+
+void FakeRobStrideMotor::report_status(uint8_t mode, uint8_t fault_flags)
+{
+  impl_->mode = mode;
+  impl_->fault_flags = fault_flags;
   impl_->send_feedback();
 }
 
