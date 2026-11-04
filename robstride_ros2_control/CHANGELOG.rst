@@ -2,12 +2,21 @@
 Changelog for package robstride_ros2_control
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.3.0 (2026-11-04)
+------------------
 * Support framework-managed hardware interfaces in ros2_control 6.12 and later,
   retaining pointer-backed interfaces for older ROS distributions.
 * Synchronize driver state, commands and mode-switch initial targets with the
   new interface storage without cyclic name lookups or allocations.
+* Prevent stale commands from being consumed after mode-switch initial-value
+  synchronization fails.
+* Reject malformed numeric parameters, non-double interfaces and command ranges
+  incompatible with neutral commands or transformed motor limits.
+* Validate fresh, in-range position feedback at preparation and execution of a
+  command-mode switch; propagate command rejection through the hardware interface.
+* Accept switch requests for joints owned by other hardware components, as
+  required by Humble's multi-hardware controller switching.
+* Contributors: Yamato.K
 
 0.2.0 (2026-09-06)
 ------------------

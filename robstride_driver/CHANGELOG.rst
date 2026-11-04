@@ -2,6 +2,22 @@
 Changelog for package robstride_driver
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+0.3.0 (2026-11-04)
+------------------
+* Reject out-of-range position, velocity and effort commands without clamping;
+  discard queued motion commands and fail the complete multi-joint batch.
+* Require fresh, in-range position feedback when claiming position control.
+* Preserve neutral commands for asymmetric ranges containing zero and handle
+  floating-point roundoff at position-transform endpoints.
+* Contain executor exceptions, report executor failure through transport health,
+  and clean up failed transport runs before restarting.
+* Prevent lost worker shutdown wakeups. A permanently blocked publication can
+  still prevent shutdown completion; issue #31 remains unresolved.
+* Extend fake-motor coverage with watchdog expiry, independent multi-axis faults
+  and a test-only peer for controller_manager integration.
+* Retain existing automatic Run-mode recovery behavior.
+* Contributors: Yamato.K
+
 0.2.0 (2026-09-06)
 ------------------
 * Add CAN traffic metrics and human-readable motor and transport diagnostics.

@@ -18,6 +18,12 @@ CAN frameの送受信には`can_msgs/msg/Frame` topicを使用します。core p
 - activateのたびにmotor側CAN watchdogを非ゼロ値へ設定
 - CAN traffic、command coalescing、モーター別feedbackのdiagnostics
 
+## 0.2.xから0.3.0への更新
+
+範囲外指令はclampされず、全joint分の指令送信が拒否されます。指令を修正してhardware/controllerを再有効化してください。位置制御の有効化には、運用範囲内の新しい位置feedbackも必要です。
+
+サンプルでは`set_zero_on_activate`が有効になり、hardwareをactivateするたびに機械ゼロを再設定します。driver自体の既定値は`false`のままです。校正済みの基準位置を使用するロボットでは、サンプルの設定を確認してください。plugin IDと自動Run-mode復帰方針は変更していません。変更点と残る制約は[CHANGELOG](../CHANGELOG.rst)を参照してください。
+
 ## パッケージ構成
 
 repositoryには4つのROS 2 packageが含まれます。
@@ -165,7 +171,7 @@ active中は送信経路も監視します。CAN bridgeの送信topic endpoint�
 | `model` | custom | 型番名、または数値を明示する`custom` |
 | `position_min/max` | custom時必須 | CAN positionのencode・decode範囲 `[rad]` |
 | `velocity_min/max` | custom時必須 | CAN velocityのencode・decode範囲 `[rad/s]` |
-| `effort_min/max` | custom時必須 | モーター側effortのclamp範囲 `[Nm]` |
+| `effort_min/max` | custom時必須 | モーター側effortの指令範囲 `[Nm]` |
 | `effort_wire_min/max` | effort制限と同じ | モーター側CAN effortのencode・decode範囲 `[Nm]` |
 | `kp_max` / `kd_max` | custom時必須 | gainのencode上限 |
 | `kp` / `kd` | 必須 | position・velocity command interfaceで使用するgain |

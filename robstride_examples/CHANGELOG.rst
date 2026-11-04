@@ -2,11 +2,15 @@
 Changelog for package robstride_examples
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.3.0 (2026-11-04)
+------------------
 * Add opt-in controller_manager-to-vcan integration tests for command topics,
   independent joint feedback, controller switching and hardware reactivation.
 * Run the complete installed-plugin scenario on Jazzy and Rolling in CI.
+* Enable ``set_zero_on_activate`` in the example description and set the CAN
+  receiver interval to 0.05 seconds. The driver default remains false; users
+  retaining an existing mechanical reference should review the example setting.
+* Contributors: Yamato.K, ryo-0723
 
 0.2.0 (2026-09-06)
 ------------------
