@@ -2,6 +2,13 @@
 Changelog for package robstride_ros2_control
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* Support framework-managed hardware interfaces in ros2_control 6.12 and later,
+  retaining pointer-backed interfaces for older ROS distributions.
+* Synchronize driver state, commands and mode-switch initial targets with the
+  new interface storage without cyclic name lookups or allocations.
+
 0.2.0 (2026-09-06)
 ------------------
 * Resolve known motor models from the production driver profile registry.

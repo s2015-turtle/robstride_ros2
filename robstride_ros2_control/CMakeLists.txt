@@ -28,6 +28,12 @@ if(hardware_interface_VERSION VERSION_GREATER_EQUAL "5.0.0")
     PUBLIC ROBSTRIDE_ROS2_USE_HARDWARE_COMPONENT_PARAMS
   )
 endif()
+if(hardware_interface_VERSION VERSION_GREATER_EQUAL "6.12.0")
+  # Legacy pointer-backed exports were removed in ros2_control 6.12.
+  target_compile_definitions(${PROJECT_NAME}
+    PUBLIC ROBSTRIDE_ROS2_USE_MANAGED_INTERFACES
+  )
+endif()
 if(COMMAND ament_target_dependencies)
   ament_target_dependencies(${PROJECT_NAME}
     hardware_interface pluginlib rclcpp rclcpp_lifecycle
@@ -64,6 +70,11 @@ if(BUILD_TESTING)
   ament_add_gtest(test_driver_config test/test_driver_config.cpp)
   target_include_directories(test_driver_config PRIVATE internal)
   target_link_libraries(test_driver_config ${PROJECT_NAME})
+  if(hardware_interface_VERSION VERSION_GREATER_EQUAL "6.12.0")
+    ament_add_gtest(test_managed_interfaces test/test_managed_interfaces.cpp)
+    target_include_directories(test_managed_interfaces PRIVATE internal)
+    target_link_libraries(test_managed_interfaces ${PROJECT_NAME})
+  endif()
 endif()
 
 ament_export_include_directories(include)

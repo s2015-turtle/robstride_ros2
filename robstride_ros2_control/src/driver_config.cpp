@@ -266,7 +266,12 @@ JointData parse_joint(const hardware_interface::ComponentInfo & info)
       hardware_interface::HW_IF_POSITION, hardware_interface::HW_IF_VELOCITY,
       hardware_interface::HW_IF_EFFORT};
     std::set<std::string> actual_commands;
-    for (const auto & interface : info.command_interfaces) {actual_commands.insert(interface.name);}
+    for (const auto & interface : info.command_interfaces) {
+      if (!interface.data_type.empty() && interface.data_type != "double") {
+        throw std::runtime_error("command interface '" + interface.name + "' must use double data");
+      }
+      actual_commands.insert(interface.name);
+    }
     if (actual_commands != expected_commands || info.command_interfaces.size() != 3) {
       throw std::runtime_error("command interfaces must be position, velocity and effort");
     }
@@ -278,7 +283,12 @@ JointData parse_joint(const hardware_interface::ComponentInfo & info)
       hardware_interface::HW_IF_POSITION, hardware_interface::HW_IF_VELOCITY,
       hardware_interface::HW_IF_EFFORT, "temperature", "fault"};
     std::set<std::string> actual_states;
-    for (const auto & interface : info.state_interfaces) {actual_states.insert(interface.name);}
+    for (const auto & interface : info.state_interfaces) {
+      if (!interface.data_type.empty() && interface.data_type != "double") {
+        throw std::runtime_error("state interface '" + interface.name + "' must use double data");
+      }
+      actual_states.insert(interface.name);
+    }
     if (!std::includes(
         actual_states.begin(), actual_states.end(), required_states.begin(), required_states.end()) ||
       !std::includes(

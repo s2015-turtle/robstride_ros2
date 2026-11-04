@@ -76,6 +76,19 @@ TEST(DriverConfig, StrictlyParsesAllJointNumbersWithContext)
   }
 }
 
+TEST(DriverConfig, RequiresDoubleInterfaces)
+{
+  for (bool command : {false, true}) {
+    auto hardware = valid_hardware_info();
+    auto & interfaces = command ? hardware.joints[0].command_interfaces :
+      hardware.joints[0].state_interfaces;
+    for (auto & info : interfaces) {info.data_type = "double";}
+    EXPECT_NO_THROW(rs::parse_driver_configuration(hardware));
+    interfaces[0].data_type = "float32";
+    EXPECT_THROW(rs::parse_driver_configuration(hardware), std::runtime_error);
+  }
+}
+
 TEST(DriverConfig, StrictlyParsesHardwareIntegersWithContext)
 {
   for (const auto * key : {
